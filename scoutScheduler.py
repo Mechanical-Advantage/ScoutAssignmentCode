@@ -8,6 +8,7 @@ import sqlite3 as sql
 from pathlib import Path
 import xlsxwriter
 import math
+from datetime import datetime
 
 #Config
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
@@ -122,13 +123,25 @@ if len(matchlistRaw) == 0:
     quit()
 
 matchlistUnsorted = {}
+matchlistDaysUnsorted = {}
 for i in range(0, len(matchlistRaw)):
     if matchlistRaw[i].comp_level == 'qm':
         matchlistUnsorted[matchlistRaw[i].match_number] = [matchlistRaw[i].alliances["blue"]["team_keys"][0], matchlistRaw[i].alliances["blue"]["team_keys"][1], matchlistRaw[i].alliances["blue"]["team_keys"][2], matchlistRaw[i].alliances["red"]["team_keys"][0], matchlistRaw[i].alliances["red"]["team_keys"][1], matchlistRaw[i].alliances["red"]["team_keys"][2]]
+        matchlistDaysUnsorted[matchlistRaw[i].match_number] = matchlistRaw[i].time
 
 matchlist = []
 for i in sorted(matchlistUnsorted.keys()):
     matchlist.append(matchlistUnsorted[i])
+
+matchlistDays = []
+day = 0
+lastDate = -1
+for i in sorted(matchlistDaysUnsorted.keys()):
+    matchDay = int(datetime.utcfromtimestamp(matchlistDaysUnsorted[i]).strftime('%d'))
+    if matchDay > lastDate:
+        day += 1
+        lastDate = matchDay
+    matchlistDays.append(day)
 
 print("Assigning scouts...")
 
@@ -250,6 +263,7 @@ headingLeft = workbook.add_format({'bold': True, 'align': 'left'})
 headingRight = workbook.add_format({'bold': True, 'align': 'right'})
 highlighted = workbook.add_format({'bg_color': 'yellow'})
 underlined = workbook.add_format({'underline': True})
+dayTitle = workbook.add_format({'underline': True, 'align': 'right'})
 
 #Write output (primary scouts)
 worksheet = workbook.add_worksheet("Primary Scouts")
@@ -329,16 +343,34 @@ for scout, matches in scoutSchedules.items():
     
     #Write schedule
     notes = []
-    for i in range(0, len(matches)):
+    i = -1
+    lastDay = 1
+    nextWrite = "match"
+    matchnumber = 0
+    while True:
+        i += 1
         column = int(math.floor(i / 43) * 3)
         row = int((i - ((column / 3) * 43)) + 4)
-        worksheet.write(row, column, matches[i]["match"])
-        if primaryScouts[matches[i]["team"]] != scout:
-            if not any(d['team'] == matches[i]["team"] for d in notes): #Add to notes if not already
-                notes.append({"scout": primaryScouts[matches[i]["team"]], "team": matches[i]["team"]})
-            worksheet.write(row, column+1, matches[i]["team"], highlighted)
-        else:
-            worksheet.write(row, column+1, matches[i]["team"])
+        if matchlistDays[matches[matchnumber]["match"] - 1] > lastDay: #Need to add day title, skip line
+            lastDay += 1
+            nextWrite = "day"
+        
+        elif nextWrite == "day": #Add day title
+            if row < 42:
+                worksheet.write(row, column, "Day " + str(lastDay), dayTitle)
+                nextWrite = "match"
+        
+        else: #Add match
+            worksheet.write(row, column, matches[matchnumber]["match"])
+            if primaryScouts[matches[matchnumber]["team"]] != scout:
+                if not any(d['team'] == matches[matchnumber]["team"] for d in notes): #Add to notes if not already
+                    notes.append({"scout": primaryScouts[matches[matchnumber]["team"]], "team": matches[matchnumber]["team"]})
+                worksheet.write(row, column+1, matches[matchnumber]["team"], highlighted)
+            else:
+                worksheet.write(row, column+1, matches[matchnumber]["team"])
+            matchnumber += 1
+            if matchnumber >= len(matches):
+                break
 
     #Add notes
     if len(notes) > 0:
