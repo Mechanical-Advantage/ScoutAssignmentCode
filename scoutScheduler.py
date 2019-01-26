@@ -7,12 +7,13 @@ from operator import itemgetter
 import sqlite3 as sql
 from pathlib import Path
 import xlsxwriter
+import math
 
 #Config
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
-scoutRecordsDatabase = "/Users/jonah/Documents/2019 Scout Scheduler/testDatabase.db"
+scoutRecordsDatabase = "testDatabase.db"
 saveUpdatedRecords = False
-outputFile = "/Users/jonah/Documents/2019 Scout Scheduler/schedule.xlsx"
+outputFile = "schedule.xlsx"
 
 
 if saveUpdatedRecords:
@@ -111,6 +112,7 @@ print()
 eventNumberRaw = input("Event #: ")
 eventNumber = int(eventNumberRaw)-1
 event = teamEventsSorted[eventNumber].key
+eventFriendlyname = teamEventsSorted[eventNumber].name
 
 #Create match schedule
 print("Fetching schedule...")
@@ -242,48 +244,54 @@ if saveUpdatedRecords:
 
 #Write output (create workbook)
 workbook = xlsxwriter.Workbook(outputFile)
+eventTitle = workbook.add_format({'bold': True, 'font_size': 18})
+scoutTitle = workbook.add_format({'underline': True, 'font_size': 14})
+headingLeft = workbook.add_format({'bold': True, 'align': 'left'})
+headingRight = workbook.add_format({'bold': True, 'align': 'right'})
+highlighted = workbook.add_format({'bg_color': 'yellow'})
+underlined = workbook.add_format({'underline': True})
 
-#Write output (scout schedules)
-#Create array of dictionaries for each entry
-longFormat = {}
-for i in range(0, len(scoutlist)):
-    longFormat[scoutlist[i]] = []
-for matchnumber in range(0, len(schedule)):
-    for team, scout in schedule[matchnumber].items():
-        longFormat[scoutlist[scout]].append({"match": matchnumber + 1, "team": team})
-for scout, matches in longFormat.items():
-    longFormat[scout] = sorted(longFormat[scout], key=lambda x: (x['match'], x['team']))
-    
-#Save to file
-for scout, matches in longFormat.items():
-    worksheet = workbook.add_worksheet("Schedule (" + scout + ")")
-    bold = workbook.add_format({'bold': True})
-    worksheet.write(0, 0, scout, bold)
-    worksheet.write(2, 0, "Match")
-    worksheet.write(2, 1, "Team")
-    for i in range(0, len(matches)):
-        worksheet.write(i + 3, 0, matches[i]["match"])
-        worksheet.write(i + 3, 1, matches[i]["team"])
+#Write output (primary scouts)
+worksheet = workbook.add_worksheet("Primary Scouts")
+worksheet.write(0, 0, "Team", headingRight)
+worksheet.write(0, 1, "Primary", headingLeft)
+worksheet.write(0, 2, "Secondary", headingLeft)
+primaryScouts = {}
+secondaryScouts = {}
+for teamnumber in range(0, len(teamlist)):
+    sortedScouts = sorted(scoutRecords, key=itemgetter(teamlist[teamnumber]), reverse=True)
+    primaryScouts[int(teamlist[teamnumber][3:])] = scoutlist[sortedScouts[0]['id']]
+    if sortedScouts[1][teamlist[teamnumber]] == 0:
+        secondaryScouts[int(teamlist[teamnumber][3:])] = ""
+    else:
+        secondaryScouts[int(teamlist[teamnumber][3:])] = scoutlist[sortedScouts[1]['id']]
+row = 0
+for team in sorted(primaryScouts.keys()):
+    row += 1
+    worksheet.write(row, 0, team)
+    worksheet.write(row, 1, primaryScouts[team])
+    worksheet.write(row, 2, secondaryScouts[team])
 
 #Write output (match schedule)
 worksheet = workbook.add_worksheet("Matches")
-worksheet.write(0, 0, "Match")
-worksheet.write(0, 1, "B1")
-worksheet.write(0, 2, "B2")
-worksheet.write(0, 3, "B3")
-worksheet.write(0, 4, "R1")
-worksheet.write(0, 5, "R2")
-worksheet.write(0, 6, "R3")
+worksheet.write(0, 0, "Match", headingRight)
+column = -1
+for alliance in ["B", "R"]:
+    for i in range(1, 4):
+        column += 2
+        worksheet.write(0, column, alliance + str(i), headingRight)
+        worksheet.write(0, column + 1, "Scout", headingLeft)
 for matchnumber in range(0, len(matchlist)):
     worksheet.write(matchnumber + 1, 0, matchnumber + 1)
     for i in range(0, 6):
-        worksheet.write(matchnumber + 1, i + 1, matchlist[matchnumber][i][3:])
+        worksheet.write(matchnumber + 1, (i * 2) + 1, int(matchlist[matchnumber][i][3:]), underlined)
+        worksheet.write(matchnumber + 1, (i * 2) + 2, scoutlist[schedule[matchnumber][int(matchlist[matchnumber][i][3:])]])
 
-#Write output (teams)
-worksheet = workbook.add_worksheet("Teams")
-worksheet.write(0, 0, "Team")
-worksheet.write(0, 1, "Match")
-worksheet.write(0, 2, "Alliance Color")
+#Write output (match schedule (long))
+worksheet = workbook.add_worksheet("Matches_long")
+worksheet.write(0, 0, "Team", headingRight)
+worksheet.write(0, 1, "Match", headingRight)
+worksheet.write(0, 2, "Alliance", headingRight)
 teamsOutput = []
 for matchnumber in range(0, len(matchlist)):
     for i in range(0, len(matchlist[matchnumber])):
@@ -295,9 +303,57 @@ for matchnumber in range(0, len(matchlist)):
 teamsOutput = sorted(teamsOutput, key=lambda x: (x['team'], x['match']))
 
 for i in range(0, len(teamsOutput)):
-    worksheet.write(i + 1, 0, teamsOutput[i]["team"])
+    worksheet.write(i + 1, 0, int(teamsOutput[i]["team"]))
     worksheet.write(i + 1, 1, teamsOutput[i]["match"])
     worksheet.write(i + 1, 2, teamsOutput[i]["alliance"])
+
+#Write output (scout schedules)
+#Create long formatted (sort schedule)
+scoutSchedules = {}
+for i in range(0, len(scoutlist)):
+    scoutSchedules[scoutlist[i]] = []
+for matchnumber in range(0, len(schedule)):
+    for team, scout in schedule[matchnumber].items():
+        scoutSchedules[scoutlist[scout]].append({"match": matchnumber + 1, "team": team})
+for scout, matches in scoutSchedules.items():
+    scoutSchedules[scout] = sorted(scoutSchedules[scout], key=lambda x: (x['match'], x['team']))
+
+#Generate schedules
+for scout, matches in scoutSchedules.items():
+    #Set up worksheet
+    worksheet = workbook.add_worksheet("Schedule (" + scout + ")")
+    worksheet.write(0, 0, "Scouting Schedule (" + eventFriendlyname + ")", eventTitle)
+    worksheet.write(1, 0, scout, scoutTitle)
+    worksheet.write(3, 0, "Match", headingRight)
+    worksheet.write(3, 1, "Team", headingRight)
+    
+    #Write schedule
+    notes = []
+    for i in range(0, len(matches)):
+        column = int(math.floor(i / 43) * 3)
+        row = int((i - ((column / 3) * 43)) + 4)
+        worksheet.write(row, column, matches[i]["match"])
+        if primaryScouts[matches[i]["team"]] != scout:
+            if not any(d['team'] == matches[i]["team"] for d in notes): #Add to notes if not already
+                notes.append({"scout": primaryScouts[matches[i]["team"]], "team": matches[i]["team"]})
+            worksheet.write(row, column+1, matches[i]["team"], highlighted)
+        else:
+            worksheet.write(row, column+1, matches[i]["team"])
+
+    #Add notes
+    if len(notes) > 0:
+        if (column / 3) == 2:
+            startingColumn = column
+            startingRow = row + 2
+        else:
+            startingColumn = column + 3
+            startingRow = 3
+        worksheet.write(startingRow, startingColumn, "Team", headingRight)
+        worksheet.write(startingRow, startingColumn + 1, "Scout", headingLeft)
+        notes = sorted(notes, key=itemgetter("team"))
+        for i in range(0, len(notes)):
+            worksheet.write(startingRow + i + 1, startingColumn, notes[i]["team"])
+            worksheet.write(startingRow + i + 1, startingColumn + 1, notes[i]["scout"])
 
 #Save workbook
 workbook.close()
