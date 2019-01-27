@@ -326,11 +326,11 @@ for matchnumber in range(0, len(matchlist)):
             alliance = 1
         else:
             alliance = 0
-        teamsOutput.append({"match": matchnumber + 1, "team": matchlist[matchnumber][i][3:], "alliance": alliance})
+        teamsOutput.append({"match": matchnumber + 1, "team": int(matchlist[matchnumber][i][3:]), "alliance": alliance})
 teamsOutput = sorted(teamsOutput, key=lambda x: (x['team'], x['match']))
 
 for i in range(0, len(teamsOutput)):
-    worksheet.write(i + 1, 0, int(teamsOutput[i]["team"]))
+    worksheet.write(i + 1, 0, teamsOutput[i]["team"])
     worksheet.write(i + 1, 1, teamsOutput[i]["match"])
     worksheet.write(i + 1, 2, teamsOutput[i]["alliance"])
 
