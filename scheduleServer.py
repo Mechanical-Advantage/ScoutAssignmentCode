@@ -11,6 +11,8 @@ import math
 from datetime import datetime
 import cherrypy
 import time
+import random
+import string
 
 #Config
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
@@ -22,29 +24,33 @@ maxYear = 2019
 #Initialize TBA connection
 tba = tbapy.TBA(TBAkey)
 
-#Check if database exists & create if doesn't exist
-tempPath = Path(scoutRecordsDatabase)
-if not tempPath.is_file():
+#Database initializing code
+def initDatabase():
     conn = sql.connect(scoutRecordsDatabase)
     cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS matchRecords")
     cur.execute("""CREATE TABLE matchRecords (
         scout TEXT,
         team TEXT,
         count INTEGAR
         ); """)
+    cur.execute("DROP TABLE IF EXISTS preferences")
     cur.execute("""CREATE TABLE preferences (
         team INTEGAR,
         scout TEXT
         ); """)
+    cur.execute("DROP TABLE IF EXISTS scouts")
     cur.execute("""CREATE TABLE scouts (
         name TEXT,
         enabled INTEGAR
         ); """)
+    cur.execute("DROP TABLE IF EXISTS event")
     cur.execute("""CREATE TABLE event (
         friendlyname TEXT,
         key TEXT,
         timestamp TEXT
         ); """)
+    cur.execute("DROP TABLE IF EXISTS schedule")
     cur.execute("""CREATE TABLE schedule (
         match INTEGAR,
         B1 INTEGAR,
@@ -60,6 +66,7 @@ if not tempPath.is_file():
         R3 INTEGAR,
         R3_scout TEXT
         ); """)
+    cur.execute("DROP TABLE IF EXISTS selection")
     cur.execute("""CREATE TABLE selection (
         year INTEGAR
         ); """)
@@ -67,6 +74,11 @@ if not tempPath.is_file():
     cur.execute("INSERT INTO selection(year) VALUES (2017)")
     conn.commit()
     conn.close()
+
+#Check if database exists & create if doesn't exist
+tempPath = Path(scoutRecordsDatabase)
+if not tempPath.is_file():
+    initDatabase()
 
 def getSchedule(event, eventFriendlyname):
     #Connect to database
@@ -394,7 +406,7 @@ def getSchedule(event, eventFriendlyname):
     #Close sqlite connection
     conn.commit()
     conn.close()
-
+    return("Success")
 
 def event(cur): #Get event data from database
     cur.execute("SELECT * FROM event")
@@ -406,8 +418,18 @@ def selection(cur): #Get event data from database
     DBevent = cur.fetchall()
     return {"year": DBevent[0][0]}
 
+def scouts(cur):
+    #Get scouts
+    cur.execute("SELECT * FROM scouts")
+    dbScouts = cur.fetchall()
+    scoutlist = {}
+    for row in dbScouts:
+        scoutlist[row[0]] = row[1] == 1
+    return(scoutlist)
+
 #Server object
 eventLookup = {}
+resetKey = {}
 class mainServer(object):
     @cherrypy.expose
     def index(self):
@@ -417,6 +439,7 @@ class mainServer(object):
         output = """
             <html><head><title>6328 Scout Schedule</title></head><body>
             <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <a href="/editScouts">Edit scouts</a><br>
             <a href="/create">Create schedule</a>
             
             </body></html>
@@ -426,6 +449,80 @@ class mainServer(object):
         return(output)
 
     @cherrypy.expose
+    def editScouts(self):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+    
+        output = """
+            <html><head><title>Edit Scouts - 6328 Scout Schedule</title></head><body>
+            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <a href="/">< Return To Home</a><br><br>
+            
+            <b>Active Scouts:</b><br>
+            $activeList_html
+            
+            <br><b>Disabled Scouts:</b><br>
+            $disabledList_html
+            
+            <br><br><form method="post" action="/editScout_addScout">
+            <input type="text", name="scout"><button type="submit">Add Scout</button>
+            </form>
+            
+            <form method="post" action="/editScout_toggleScout">
+            <input type="text", name="scout"><button type="submit">Toggle State</button>
+            </form>
+            
+            <form method="post" action="/reset">
+            <input type="text", name="key"><button type="submit">Reset Database</button>
+            <br>
+            Copy "$resetKey" to reset database<br><br>DO NOT reset database between events.
+            </form>
+            
+            </body></html>
+            """
+    
+        scoutlist = scouts(cur)
+        activeList_html = ""
+        disabledList_html = ""
+        for scout, enabled in scoutlist.items():
+            if enabled:
+                activeList_html = activeList_html + scout + "<br>"
+            else:
+                disabledList_html = disabledList_html + scout + "<br>"
+        
+        output = output.replace("$activeList_html", activeList_html)
+        output = output.replace("$disabledList_html", disabledList_html)
+        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        resetKey["key"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        output = output.replace("$resetKey", resetKey["key"])
+        conn.close()
+        return(output)
+
+    @cherrypy.expose
+    def editScout_toggleScout(self, scout=""):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        scoutlist = scouts(cur)
+        if scout in scoutlist:
+            if scoutlist[scout]:
+                newValue = 0
+            else:
+                newValue = 1
+            cur.execute("UPDATE scouts SET enabled=? WHERE name=?", (newValue,scout))
+            conn.commit()
+        conn.close()
+        return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
+
+    @cherrypy.expose
+    def editScout_addScout(self, scout=""):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO scouts(name,enabled) VALUES (?,1)", (scout,))
+        conn.commit()
+        conn.close()
+        return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
+
+    @cherrypy.expose
     def create(self):
         conn = sql.connect(scoutRecordsDatabase)
         cur = conn.cursor()
@@ -433,7 +530,9 @@ class mainServer(object):
         output = """
             <html><head><title>Create Schedule - 6328 Scout Schedule</title></head><body>
             <h1>6328 Scout Schedule ($event_friendlyname)</h1>
-            <form method="post" action="/create_changeyear">
+            <a href="/">< Return To Home</a><br><br>
+            
+            <form method="post" action="/create_changeYear">
             <b>Year: </b><input type="text", name="year", value="$selection_year"><button type="submit">Get Events</button>
             </form>
             
@@ -459,7 +558,7 @@ class mainServer(object):
         return(output)
 
     @cherrypy.expose
-    def create_changeyear(self, year=2017):
+    def create_changeYear(self, year=2017):
         if 2017 <= int(year) <= maxYear:
             conn = sql.connect(scoutRecordsDatabase)
             cur = conn.cursor()
@@ -470,7 +569,22 @@ class mainServer(object):
 
     @cherrypy.expose
     def create_generateSchedule(self, eventkey="2017nhgrs"):
-        return(getSchedule(event=eventkey, eventFriendlyname=eventLookup[eventkey]))
+        result = getSchedule(event=eventkey, eventFriendlyname=eventLookup[eventkey])
+        if result[:5] == "Error":
+            output = """
+                <html><head><title>Error - 6328 Scout Schedule</title></head><body>
+                <a href="/create">< Return</a><br><br>$error
+                </body></html>
+                """
+            output = output.replace("$error", result)
+            return(output)
+        return("""<meta http-equiv="refresh" content="0; url=/create" />""")
+
+    @cherrypy.expose
+    def reset(self, key="notthekey"):
+        if key == resetKey["key"]:
+            initDatabase()
+        return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
 
 cherrypy.config.update({'server.socket_port': port})
 cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": ""}})
