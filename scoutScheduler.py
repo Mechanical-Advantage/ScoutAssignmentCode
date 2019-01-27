@@ -270,6 +270,7 @@ worksheet = workbook.add_worksheet("Primary Scouts")
 worksheet.write(0, 0, "Team", headingRight)
 worksheet.write(0, 1, "Primary", headingLeft)
 worksheet.write(0, 2, "Secondary", headingLeft)
+worksheet.write(0, 3, "Primary %", headingLeft)
 primaryScouts = {}
 secondaryScouts = {}
 for teamnumber in range(0, len(teamlist)):
@@ -285,6 +286,18 @@ for team in sorted(primaryScouts.keys()):
     worksheet.write(row, 0, team)
     worksheet.write(row, 1, primaryScouts[team])
     worksheet.write(row, 2, secondaryScouts[team])
+
+    #Find primary %
+    scoutNumber = scoutlist.index(primaryScouts[team])
+    scoutedMatches = 0
+    totalMatches = 0
+    for i in range(0, len(schedule)):
+        for scheduleTeam, scheduleScout in schedule[i].items():
+            if scheduleTeam == team:
+                totalMatches += 1
+                if scheduleScout == scoutNumber:
+                    scoutedMatches += 1
+    worksheet.write(row, 3, str(round((scoutedMatches/totalMatches)*100)) + "%")
 
 #Write output (match schedule)
 worksheet = workbook.add_worksheet("Matches")
