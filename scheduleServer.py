@@ -165,7 +165,7 @@ def getSchedule(event, eventFriendlyname):
     for row in dbPreferences:
         if row[1] in scoutlist:
             fullTeam = "frc" + str(row[0])
-            scoutRecords[scoutlist.index(row[1])][fullTeam] = 9999
+            scoutRecords[scoutlist.index(row[1])][fullTeam] = 99999
 
     #Create priority lists
     def priorityList(team):
@@ -173,7 +173,7 @@ def getSchedule(event, eventFriendlyname):
         tempOutput = []
         for i in range(0, len(sortedScouts)):
             tempOutput.append(sortedScouts[i]['id'])
-        return(tempOutput)
+        return tempOutput
 
     #Create match schedule
     def createSchedule(match):
@@ -197,29 +197,30 @@ def getSchedule(event, eventFriendlyname):
             for i in range(0, len(scoutlist)):
                 scoutRequests.append([])
             for team, list in priorityLists.items():
-                if len(priorityLists[team]) > 0:
+                if len(list) > 0:
                     scoutRequests[priorityLists[team][0]].append(team)
                 
-                #Iterate through scout requests (resolving conflicts when neccessary)
-                for scoutRequestNumber in range(0, len(scoutRequests)):
-                    if len(scoutRequests[scoutRequestNumber]) == 1:
-                        #No conflict (scout requested by one team)
-                        scheduled[scoutRequests[scoutRequestNumber][0]] = scoutRequestNumber #Add to schedule
-                        priorityLists[scoutRequests[scoutRequestNumber][0]] = [] #Clear priority list for team
-                        removeFromPriority(scout=scoutRequestNumber) #Remove scout from priority lists (so cannot be selected for another team)
-                    elif len(scoutRequests[scoutRequestNumber]) > 1:
-                        #Conflict found (scout requested by multiple teams)
-                        #Resolved by comparing potential 'loss of experience' if each team used secondary scout
-                        comparisonData = []
-                        for i in range(0, len(scoutRequests[scoutRequestNumber])):
-                            comparisonData.append(scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][0]][scoutRequests[scoutRequestNumber][i]] - scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][1]][scoutRequests[scoutRequestNumber][i]]) #Find difference between experience of primary and secondary scout
-                        maxid = 0
-                        for i in range(0, len(comparisonData)):
-                            if comparisonData[i] > comparisonData[maxid]:
-                                maxid = i
-                        scheduled[scoutRequests[scoutRequestNumber][maxid]] = scoutRequestNumber #Add to schedule
-                        priorityLists[scoutRequests[scoutRequestNumber][maxid]] = [] #Clear priority list for team
-                        removeFromPriority(scout=scoutRequestNumber) #Remove scout from priority lists (so cannot be selected for another team)
+            #Iterate through scout requests (resolving conflicts when neccessary)
+            for scoutRequestNumber in range(0, len(scoutRequests)):
+                if len(scoutRequests[scoutRequestNumber]) == 1:
+                    #No conflict (scout requested by one team)
+                    scheduled[scoutRequests[scoutRequestNumber][0]] = scoutRequestNumber #Add to schedule
+                    priorityLists[scoutRequests[scoutRequestNumber][0]] = [] #Clear priority list for team
+                    removeFromPriority(scout=scoutRequestNumber) #Remove scout from priority lists (so cannot be selected for another team)
+                elif len(scoutRequests[scoutRequestNumber]) > 1:
+                    #Conflict found (scout requested by multiple teams)
+                    #Resolved by comparing potential 'loss of experience' if each team used secondary scout
+                    comparisonData = []
+                    for i in range(0, len(scoutRequests[scoutRequestNumber])):
+                        comparisonData.append(scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][0]][scoutRequests[scoutRequestNumber][i]] - scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][1]][scoutRequests[scoutRequestNumber][i]]) #Find difference between experience of primary and secondary scout
+
+                    maxid = 0
+                    for i in range(0, len(comparisonData)):
+                        if comparisonData[i] > comparisonData[maxid]:
+                            maxid = i
+                    scheduled[scoutRequests[scoutRequestNumber][maxid]] = scoutRequestNumber #Add to schedule
+                    priorityLists[scoutRequests[scoutRequestNumber][maxid]] = [] #Clear priority list for team
+                    removeFromPriority(scout=scoutRequestNumber) #Remove scout from priority lists (so cannot be selected for another team)
 
         #Run cycles of assignment until schedule created
         while len(scheduled) < 6:
@@ -410,22 +411,29 @@ def getSchedule(event, eventFriendlyname):
 
 def event(cur): #Get event data from database
     cur.execute("SELECT * FROM event")
-    DBevent = cur.fetchall()
-    return {"friendlyname": DBevent[0][0], "key": DBevent[0][1], "timestamp": DBevent[0][2]}
+    dbEvent = cur.fetchall()
+    return {"friendlyname": dbEvent[0][0], "key": dbEvent[0][1], "timestamp": dbEvent[0][2]}
 
 def selection(cur): #Get event data from database
     cur.execute("SELECT * FROM selection")
     DBevent = cur.fetchall()
     return {"year": DBevent[0][0]}
 
-def scouts(cur):
-    #Get scouts
+def scouts(cur): #Get scoutlist
     cur.execute("SELECT * FROM scouts")
     dbScouts = cur.fetchall()
     scoutlist = {}
     for row in dbScouts:
         scoutlist[row[0]] = row[1] == 1
     return(scoutlist)
+
+def prefs(cur): #Get preferences
+    cur.execute("SELECT * FROM preferences")
+    dbPrefs = cur.fetchall()
+    output = {}
+    for row in dbPrefs:
+        output[row[0]] = row[1]
+    return output
 
 #Server object
 eventLookup = {}
@@ -439,7 +447,8 @@ class mainServer(object):
         output = """
             <html><head><title>6328 Scout Schedule</title></head><body>
             <h1>6328 Scout Schedule ($event_friendlyname)</h1>
-            <a href="/editScouts">Edit scouts</a><br>
+            <a href="/editScouts">Edit scouts</a><br><br>
+            <a href="/editPrefs">Edit scout preferences</a><br><br>
             <a href="/create">Create schedule</a>
             
             </body></html>
@@ -521,6 +530,58 @@ class mainServer(object):
         conn.commit()
         conn.close()
         return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
+
+    @cherrypy.expose
+    def editPrefs(self):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        
+        output = """
+            <html><head><title>Edit Scout Preferences - 6328 Scout Schedule</title></head><body>
+            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <a href="/">< Return To Home</a><br><br>
+            
+            <b>Preferences:</b><br>
+            $prefsList_html
+            
+            <br><br><form method="post" action="/editPrefs_addPref">
+            Team:<input type="text", name="team"> Scout:<input type="text", name="scout"><button type="submit">Add Preference</button>
+            </form>
+            
+            <form method="post" action="/editPrefs_removePref">
+            Team:<input type="text", name="team"><button type="submit">Remove Preference</button>
+            </form>
+            
+            </body></html>
+            """
+        
+        prefsList = prefs(cur)
+        prefsList_html = ""
+        for team, scout in prefsList.items():
+            prefsList_html = prefsList_html + "Team " + str(team) + " -> " + scout + "<br>"
+        
+        output = output.replace("$prefsList_html", prefsList_html)
+        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        conn.close()
+        return(output)
+
+    @cherrypy.expose
+    def editPrefs_addPref(self, team="0000", scout="testscout"):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO preferences(team,scout) VALUES (?,?)", (int(team), scout))
+        conn.commit()
+        conn.close()
+        return("""<meta http-equiv="refresh" content="0; url=/editPrefs" />""")
+    
+    @cherrypy.expose
+    def editPrefs_removePref(self, team="0000"):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM preferences WHERE team=?", (int(team),))
+        conn.commit()
+        conn.close()
+        return("""<meta http-equiv="refresh" content="0; url=/editPrefs" />""")
 
     @cherrypy.expose
     def create(self):
