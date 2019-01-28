@@ -437,8 +437,9 @@ def prefs(cur): #Get preferences
 
 #Server object
 eventLookup = {}
-resetKey = {}
 class mainServer(object):
+    resetKey = ""
+    
     @cherrypy.expose
     def index(self):
         conn = sql.connect(scoutRecordsDatabase)
@@ -502,8 +503,8 @@ class mainServer(object):
         output = output.replace("$activeList_html", activeList_html)
         output = output.replace("$disabledList_html", disabledList_html)
         output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
-        resetKey["key"] = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-        output = output.replace("$resetKey", resetKey["key"])
+        self.resetKey = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        output = output.replace("$resetKey", self.resetKey)
         conn.close()
         return(output)
 
@@ -643,7 +644,7 @@ class mainServer(object):
 
     @cherrypy.expose
     def reset(self, key="notthekey"):
-        if key == resetKey["key"]:
+        if key == self.resetKey:
             initDatabase()
         return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
 
