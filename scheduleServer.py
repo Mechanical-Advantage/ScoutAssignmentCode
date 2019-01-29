@@ -562,7 +562,7 @@ class mainServer(object):
             <b>Preferences:</b><br>
             $prefsList_html
             
-            <br><br><form method="post" action="/editPrefs_addPref">
+            <br><form method="post" action="/editPrefs_addPref">
             Team:<input type="text", name="team"> Scout:<input type="text", name="scout"><button type="submit">Add Preference</button>
             </form>
             
