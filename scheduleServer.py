@@ -860,4 +860,4 @@ class mainServer(object):
         return("""<meta http-equiv="refresh" content="0; url=/view" />""")
 
 cherrypy.config.update({'server.socket_port': port})
-cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}})
+cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}, "/favicon.ico": {"tools.staticfile.on": True, "tools.staticfile.filename": os.getcwd() + "/favicon.ico"}})
