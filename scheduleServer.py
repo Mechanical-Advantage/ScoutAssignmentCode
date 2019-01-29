@@ -66,12 +66,6 @@ def initDatabase():
         R3 INTEGAR,
         R3_scout TEXT
         ); """)
-    cur.execute("DROP TABLE IF EXISTS selection")
-    cur.execute("""CREATE TABLE selection (
-        year INTEGAR
-        ); """)
-    cur.execute("INSERT INTO event(friendlyname,key,timestamp) VALUES ('NA','NA','NA')")
-    cur.execute("INSERT INTO selection(year) VALUES (2017)")
     conn.commit()
     conn.close()
 
@@ -251,6 +245,16 @@ def getSchedule(event, eventFriendlyname):
             if count > 0:
                 cur.execute("INSERT INTO matchRecords(scout,team,count) VALUES (?,?,?)", (scoutlist[scoutnumber],team,count,))
 
+    #Write schedule to database
+    cur.execute("DELETE FROM schedule")
+    for matchnumber in range(0, len(schedule)):
+        tempOutput = {}
+        codes = ["B1", "B2", "B3", "R1", "R2", "R3"]
+        for i in range(0, 6):
+            tempOutput[codes[i]] = int(matchlist[matchnumber][i][3:])
+            tempOutput[codes[i] + "_scout"] = scoutlist[schedule[matchnumber][int(matchlist[matchnumber][i][3:])]]
+        cur.execute("INSERT INTO schedule(match,B1,B1_scout,B2,B2_scout,B3,B3_scout,R1,R1_scout,R2,R2_scout,R3,R3_scout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (matchnumber + 1,tempOutput["B1"],tempOutput["B1_scout"],tempOutput["B2"],tempOutput["B2_scout"],tempOutput["B3"],tempOutput["B3_scout"],tempOutput["R1"],tempOutput["R1_scout"],tempOutput["R2"],tempOutput["R2_scout"],tempOutput["R3"],tempOutput["R3_scout"]))
+
     #Write output (create workbook)
     workbook = xlsxwriter.Workbook(outputFile)
     eventTitle = workbook.add_format({'bold': True, 'font_size': 18})
@@ -400,9 +404,7 @@ def getSchedule(event, eventFriendlyname):
     workbook.close()
 
     #Update event table
-    cur.execute("UPDATE event SET key=?", (event,))
-    cur.execute("UPDATE event SET friendlyname=?", (eventFriendlyname,))
-    cur.execute("UPDATE event SET timestamp=?", (time.ctime(),))
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp) VALUES (?,?,?)", (event,eventFriendlyname,time.ctime()))
 
     #Close sqlite connection
     conn.commit()
@@ -412,12 +414,13 @@ def getSchedule(event, eventFriendlyname):
 def event(cur): #Get event data from database
     cur.execute("SELECT * FROM event")
     dbEvent = cur.fetchall()
-    return {"friendlyname": dbEvent[0][0], "key": dbEvent[0][1], "timestamp": dbEvent[0][2]}
-
-def selection(cur): #Get event data from database
-    cur.execute("SELECT * FROM selection")
-    DBevent = cur.fetchall()
-    return {"year": DBevent[0][0]}
+    output = []
+    for i in range(0, len(dbEvent)):
+        output.append({"friendlyname": dbEvent[i][0], "key": dbEvent[i][1], "timestamp": dbEvent[i][2]})
+    if len(dbEvent) == 0:
+        output.append({"friendlyname": "NA", "key": "NA", "timestamp": "NA"})
+    output.reverse()
+    return output
 
 def scouts(cur): #Get scoutlist
     cur.execute("SELECT * FROM scouts")
@@ -454,7 +457,7 @@ class mainServer(object):
             
             </body></html>
             """
-        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
         conn.close()
         return(output)
 
@@ -475,7 +478,7 @@ class mainServer(object):
             $disabledList_html
             
             <br><br><form method="post" action="/editScout_addScout">
-            <input type="text", name="scout"><button type="submit">Add Scout</button>
+            <input type="text", name="scout"><button type="submit">Add Scout(s)</button>
             </form>
             
             <form method="post" action="/editScout_toggleScout">
@@ -502,7 +505,7 @@ class mainServer(object):
         
         output = output.replace("$activeList_html", activeList_html)
         output = output.replace("$disabledList_html", disabledList_html)
-        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
         self.resetKey = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
         output = output.replace("$resetKey", self.resetKey)
         conn.close()
@@ -527,7 +530,9 @@ class mainServer(object):
     def editScout_addScout(self, scout=""):
         conn = sql.connect(scoutRecordsDatabase)
         cur = conn.cursor()
-        cur.execute("INSERT INTO scouts(name,enabled) VALUES (?,1)", (scout,))
+        scoutsToAdd = [x.strip() for x in scout.split(',')]
+        for i in range(0, len(scoutsToAdd)):
+            cur.execute("INSERT INTO scouts(name,enabled) VALUES (?,1)", (scoutsToAdd[i],))
         conn.commit()
         conn.close()
         return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
@@ -562,7 +567,7 @@ class mainServer(object):
             prefsList_html = prefsList_html + "Team " + str(team) + " -> " + scout + "<br>"
         
         output = output.replace("$prefsList_html", prefsList_html)
-        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
         conn.close()
         return(output)
 
@@ -602,19 +607,33 @@ class mainServer(object):
             <b>Event: </b><select name="eventkey">$select_html</select><button type="submit">Create Schedule</button>
             </form>
             
+            <b>Previous Events:</b><br>
+            $events_html
+            
+            <br>Schedules from all previous events will be used during generation.
+            
             </body></html>
             """
         
-        year = selection(cur)["year"]
+        if "selectedYear" in cherrypy.session:
+            year = cherrypy.session["selectedYear"]
+        else:
+            year = 2017
         teamEventsRaw = tba.team_events('frc6328', year)
         teamEventsSorted = sorted(teamEventsRaw, key=itemgetter('start_date'))
         selectionHtml = ""
         for i in range(0, len(teamEventsSorted)):
             selectionHtml = selectionHtml + "<option value=\"" + teamEventsSorted[i].key + "\">" + teamEventsSorted[i].name + "</option>"
             eventLookup[teamEventsSorted[i].key] = teamEventsSorted[i].name
-        
+    
+        events = event(cur)
+        eventsHtml = ""
+        for i in range(0, len(events)):
+            eventsHtml = eventsHtml + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + ")<br>"
+    
         output = output.replace("$select_html", selectionHtml)
-        output = output.replace("$event_friendlyname", event(cur)["friendlyname"])
+        output = output.replace("$events_html", eventsHtml)
+        output = output.replace("$event_friendlyname", events[0]["friendlyname"])
         output = output.replace("$selection_year", str(year))
         conn.close()
         return(output)
@@ -622,11 +641,7 @@ class mainServer(object):
     @cherrypy.expose
     def create_changeYear(self, year=2017):
         if 2017 <= int(year) <= maxYear:
-            conn = sql.connect(scoutRecordsDatabase)
-            cur = conn.cursor()
-            cur.execute("UPDATE selection SET year=?", (int(year),))
-            conn.commit()
-            conn.close()
+            cherrypy.session["selectedYear"] = year
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
@@ -649,4 +664,4 @@ class mainServer(object):
         return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
 
 cherrypy.config.update({'server.socket_port': port})
-cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": ""}})
+cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}})
