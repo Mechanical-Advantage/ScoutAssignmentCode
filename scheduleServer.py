@@ -404,7 +404,7 @@ def getSchedule(event, eventFriendlyname):
     workbook.close()
 
     #Update event table
-    cur.execute("INSERT INTO event(key,friendlyname,timestamp) VALUES (?,?,?)", (event,eventFriendlyname,time.ctime()))
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp) VALUES (?,?,?)", (event,eventFriendlyname,time.strftime('%l:%M%p on %b %d, %Y')))
 
     #Close sqlite connection
     conn.commit()
@@ -438,6 +438,17 @@ def prefs(cur): #Get preferences
         output[row[0]] = row[1]
     return output
 
+def scoutSchedule(cur): #Get schedule
+    cur.execute("SELECT * FROM schedule")
+    dbSchedule = cur.fetchall()
+    output = []
+    for row in dbSchedule:
+        tempMatch = []
+        for i in range(0, 6):
+            tempMatch.append({"team": row[(i * 2) + 1], "scout": row[(i * 2) + 2]})
+        output.append(tempMatch)
+    return output
+
 #Server object
 eventLookup = {}
 class mainServer(object):
@@ -449,11 +460,12 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>6328 Scout Schedule</title></head><body>
-            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <html><head><title>6328 Scout Scheduler</title></head><body>
+            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
             <a href="/editScouts">Edit scouts</a><br><br>
             <a href="/editPrefs">Edit scout preferences</a><br><br>
-            <a href="/create">Create schedule</a>
+            <a href="/create">Create schedule</a><br><br>
+            <a href="/view">View schedule</a>
             
             </body></html>
             """
@@ -467,8 +479,8 @@ class mainServer(object):
         cur = conn.cursor()
     
         output = """
-            <html><head><title>Edit Scouts - 6328 Scout Schedule</title></head><body>
-            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <html><head><title>Edit Scouts - 6328 Scout Scheduler</title></head><body>
+            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <b>Active Scouts:</b><br>
@@ -543,8 +555,8 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>Edit Scout Preferences - 6328 Scout Schedule</title></head><body>
-            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <html><head><title>Edit Scout Preferences - 6328 Scout Scheduler</title></head><body>
+            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <b>Preferences:</b><br>
@@ -595,8 +607,8 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>Create Schedule - 6328 Scout Schedule</title></head><body>
-            <h1>6328 Scout Schedule ($event_friendlyname)</h1>
+            <html><head><title>Create Schedule - 6328 Scout Scheduler</title></head><body>
+            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <form method="post" action="/create_changeYear">
@@ -629,7 +641,7 @@ class mainServer(object):
         events = event(cur)
         eventsHtml = ""
         for i in range(0, len(events)):
-            eventsHtml = eventsHtml + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + ")<br>"
+            eventsHtml = eventsHtml + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + " )<br>"
     
         output = output.replace("$select_html", selectionHtml)
         output = output.replace("$events_html", eventsHtml)
@@ -649,7 +661,7 @@ class mainServer(object):
         result = getSchedule(event=eventkey, eventFriendlyname=eventLookup[eventkey])
         if result[:5] == "Error":
             output = """
-                <html><head><title>Error - 6328 Scout Schedule</title></head><body>
+                <html><head><title>Error - 6328 Scout Scheduler</title></head><body>
                 <a href="/create">< Return</a><br><br>$error
                 </body></html>
                 """
@@ -662,6 +674,190 @@ class mainServer(object):
         if key == self.resetKey:
             initDatabase()
         return("""<meta http-equiv="refresh" content="0; url=/editScouts" />""")
+
+    @cherrypy.expose
+    def view(self):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+
+        output = """
+            <html><head><title>View Schedule - 6328 Scout Scheduler</title>
+            <style>
+            
+            th, td {
+            padding: 8px;
+            }
+            
+            table tr:nth-child(even) {
+            background-color: #e8e8e8;
+            }
+            
+            table {
+            border: 1px solid black;
+            }
+            
+            td.blue {
+            color: blue;
+            }
+            
+            td.red {
+            color: red;
+            }
+            
+            </style>
+            </head><body>
+            
+            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <a href="/">< Return To Home</a><br><br>
+            
+            <form method="post" action="/view_change">
+            <input type="hidden", name="type", value="overview"><button type="submit">View Overview</button>
+            </form>
+            
+            <form method="post" action="/view_change">
+            <input type="hidden", name="type", value="overview_scouts"><button type="submit">View Overview (w/ scouts)</button>
+            </form>
+            
+            <form method="post" action="/view_change">
+            <b>Match: </b><input type="hidden", name="type", value="match"><input type="text", name="parameter"><button type="submit">View</button>
+            </form>
+            
+            <form method="post" action="/view_change">
+            <b>Scout: </b><input type="hidden", name="type", value="scout"><input type="text", name="parameter"><button type="submit">View</button>
+            </form>
+            
+            <form method="post" action="/view_change">
+            <b>Team: </b><input type="hidden", name="type", value="team"><input type="text", name="parameter"><button type="submit">View</button>
+            </form><br>
+            
+            <h3>$title</h3>
+            
+            <table>$table_html</table>
+            
+            </body></html>
+            """
+
+        if "scheduleView_type" in cherrypy.session:
+            view_type = cherrypy.session["scheduleView_type"]
+            view_parameter = cherrypy.session["scheduleView_parameter"]
+        else:
+            view_type = "overview"
+            view_parameter = "NA"
+
+        table_html = ""
+        if view_type == "overview": #Standard overview
+            title = "Schedule Overview"
+            table_html = """<tr>
+                <th>Match</th>
+                <th>B1</th>
+                <th>B2</th>
+                <th>B3</th>
+                <th>R1</th>
+                <th>R2</th>
+                <th>R3</th>
+                </tr>"""
+            schedule = scoutSchedule(cur)
+            for matchnumber in range(0, len(schedule)):
+                table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td>"
+                for i in range(0, 6):
+                    if i > 2:
+                        color = "red"
+                    else:
+                        color = "blue"
+                    table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td>"
+                table_html = table_html + "</tr>"
+
+        elif view_type == "overview_scouts": #Overview w/ scouts
+            title = "Schedule Overview (w/ scouts)"
+            table_html = """<tr>
+                <th>Match</th>
+                <th>B1</th><th>Scout</th>
+                <th>B2</th><th>Scout</th>
+                <th>B3</th><th>Scout</th>
+                <th>R1</th><th>Scout</th>
+                <th>R2</th><th>Scout</th>
+                <th>R3</th><th>Scout</th>
+                </tr>"""
+            schedule = scoutSchedule(cur)
+            for matchnumber in range(0, len(schedule)):
+                table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td>"
+                for i in range(0, 6):
+                    if i > 2:
+                        color = "red"
+                    else:
+                        color = "blue"
+                    table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td>"
+                table_html = table_html + "</tr>"
+
+        elif view_type == "match": #Match schedule
+            title = "Schedule for Match " + str(view_parameter)
+            table_html = """<tr>
+                <th>Match</th>
+                <th>B1</th><th>Scout</th>
+                <th>B2</th><th>Scout</th>
+                <th>B3</th><th>Scout</th>
+                <th>R1</th><th>Scout</th>
+                <th>R2</th><th>Scout</th>
+                <th>R3</th><th>Scout</th>
+                </tr>"""
+            table_html = table_html + "<tr><td>" + str(view_parameter) + "</td>"
+            schedule = scoutSchedule(cur)
+            for i in range(0, 6):
+                if i > 2:
+                    color = "red"
+                else:
+                    color = "blue"
+                table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[view_parameter - 1][i]["team"]) + "</td><td>" + str(schedule[view_parameter - 1][i]["scout"]) + "</td>"
+            table_html = table_html + "</tr>"
+        
+
+        elif view_type == "scout": #Schedule for scout
+            title = "Schedule for scout '" + view_parameter + "'"
+            table_html = """<tr>
+                <th>Match</th>
+                <th>Team</th>
+                </tr>"""
+            schedule = scoutSchedule(cur)
+            for matchnumber in range(0, len(schedule)):
+                for i in range(0, 6):
+                    if schedule[matchnumber][i]["scout"] == view_parameter:
+                        table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td>" + str(schedule[matchnumber][i]["team"]) + "</td></tr>"
+
+        else:
+            title = "Schedule for Team " + str(view_parameter) #Schedule for team
+            table_html = """<tr>
+                <th>Match</th>
+                <th>Team</th>
+                <th>Scout</th>
+                </tr>"""
+            schedule = scoutSchedule(cur)
+            for matchnumber in range(0, len(schedule)):
+                for i in range(0, 6):
+                    if schedule[matchnumber][i]["team"] == view_parameter:
+                        if i > 2:
+                            color = "red"
+                        else:
+                            color = "blue"
+                        table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td></tr>"
+
+
+        output = output.replace("$title", title)
+        output = output.replace("$table_html", table_html)
+        output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
+        conn.close()
+        return(output)
+
+    @cherrypy.expose
+    def view_change(self, type="NA", parameter="NA"):
+        types = ["overview", "overview_scouts", "match", "scout", "team"]
+        intTypes = ["match", "team"]
+        if type in types:
+            cherrypy.session["scheduleView_type"] = type
+            if type in intTypes:
+                cherrypy.session["scheduleView_parameter"] = int(parameter)
+            else:
+                cherrypy.session["scheduleView_parameter"] = parameter
+        return("""<meta http-equiv="refresh" content="0; url=/view" />""")
 
 cherrypy.config.update({'server.socket_port': port})
 cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}})
