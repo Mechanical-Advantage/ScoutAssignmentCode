@@ -18,7 +18,7 @@ import string
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
 scoutRecordsDatabase = "testDatabase.db"
 outputFile = "schedule.xlsx"
-scheduleCSV = None
+scheduleCSV = "inputSchedule.csv"
 port = 8000
 ourTeam = 6328
 
@@ -93,11 +93,15 @@ def getSchedule(event, eventFriendlyname):
         csv = open(scheduleCSV, "r")
         csvSchedule = csv.read()
         csvSchedule = csvSchedule.split("\n")
+        
         for i in range(0, len(csvSchedule)):
             csvSchedule[i] = csvSchedule[i].split(",")
 
         if len(csvSchedule[-1]) != 6:
             csvSchedule = csvSchedule[:-1]
+                
+        if len(csvSchedule) < 2:
+            return("Error - failed to parse csv")
 
         #Get name
         eventFriendlyname = csvSchedule[0][0]
@@ -105,6 +109,9 @@ def getSchedule(event, eventFriendlyname):
         #Get matches
         matchlist = []
         for i in range(1, len(csvSchedule)):
+            if len(csvSchedule[i]) != 6:
+                return("Error - failed to parse csv")
+            
             tempMatch = []
             for f in range(0, 6):
                 tempMatch.append("frc" + csvSchedule[i][f])
@@ -112,7 +119,7 @@ def getSchedule(event, eventFriendlyname):
         matchlistDays = []
         for i in range(0, len(matchlist)):
             matchlistDays.append(1)
-
+                
     #Connect to database
     conn = sql.connect(scoutRecordsDatabase)
     cur = conn.cursor()
@@ -158,7 +165,7 @@ def getSchedule(event, eventFriendlyname):
     try:
         matchlistRaw = tba.event_matches(event)
     except:
-        if len(matchlist) == 0:
+        if event != "offline":
             return("Error - unable to connect to TBA")
     else:
         matchlistUnsorted = {}
@@ -391,58 +398,59 @@ def getSchedule(event, eventFriendlyname):
 
     #Generate schedules
     for scout, matches in scoutSchedules.items():
-        #Set up worksheet
-        worksheet = workbook.add_worksheet("Schedule (" + scout + ")")
-        worksheet.write(0, 0, "Scouting Schedule (" + eventFriendlyname + ")", eventTitle)
-        worksheet.write(1, 0, scout, scoutTitle)
-        worksheet.write(3, 0, "Match", headingRight)
-        worksheet.write(3, 1, "Team", headingRight)
-        
-        #Write schedule
-        notes = []
-        i = -1
-        lastDay = 1
-        nextWrite = "match"
-        matchnumber = 0
-        while True:
-            i += 1
-            column = int(math.floor(i / 43) * 3)
-            row = int((i - ((column / 3) * 43)) + 4)
-            if matchlistDays[matches[matchnumber]["match"] - 1] > lastDay: #Need to add day title, skip line
-                lastDay += 1
-                nextWrite = "day"
+        if len(matches) > 0: #Check if scout has matches
+            #Set up worksheet
+            worksheet = workbook.add_worksheet("Schedule (" + scout + ")")
+            worksheet.write(0, 0, "Scouting Schedule (" + eventFriendlyname + ")", eventTitle)
+            worksheet.write(1, 0, scout, scoutTitle)
+            worksheet.write(3, 0, "Match", headingRight)
+            worksheet.write(3, 1, "Team", headingRight)
             
-            elif nextWrite == "day": #Add day title
-                if row < 42:
-                    worksheet.write(row, column, "Day " + str(lastDay), dayTitle)
-                    nextWrite = "match"
-            
-            else: #Add match
-                worksheet.write(row, column, matches[matchnumber]["match"])
-                if primaryScouts[matches[matchnumber]["team"]] != scout:
-                    if not any(d['team'] == matches[matchnumber]["team"] for d in notes): #Add to notes if not already
-                        notes.append({"scout": primaryScouts[matches[matchnumber]["team"]], "team": matches[matchnumber]["team"]})
-                    worksheet.write(row, column+1, matches[matchnumber]["team"], highlighted)
-                else:
-                    worksheet.write(row, column+1, matches[matchnumber]["team"])
-                matchnumber += 1
-                if matchnumber >= len(matches):
-                    break
+            #Write schedule
+            notes = []
+            i = -1
+            lastDay = 1
+            nextWrite = "match"
+            matchnumber = 0
+            while True:
+                i += 1
+                column = int(math.floor(i / 43) * 3)
+                row = int((i - ((column / 3) * 43)) + 4)
+                if matchlistDays[matches[matchnumber]["match"] - 1] > lastDay: #Need to add day title, skip line
+                    lastDay += 1
+                    nextWrite = "day"
+                
+                elif nextWrite == "day": #Add day title
+                    if row < 42:
+                        worksheet.write(row, column, "Day " + str(lastDay), dayTitle)
+                        nextWrite = "match"
+                
+                else: #Add match
+                    worksheet.write(row, column, matches[matchnumber]["match"])
+                    if primaryScouts[matches[matchnumber]["team"]] != scout:
+                        if not any(d['team'] == matches[matchnumber]["team"] for d in notes): #Add to notes if not already
+                            notes.append({"scout": primaryScouts[matches[matchnumber]["team"]], "team": matches[matchnumber]["team"]})
+                        worksheet.write(row, column+1, matches[matchnumber]["team"], highlighted)
+                    else:
+                        worksheet.write(row, column+1, matches[matchnumber]["team"])
+                    matchnumber += 1
+                    if matchnumber >= len(matches):
+                        break
 
-        #Add notes
-        if len(notes) > 0:
-            if (column / 3) == 2:
-                startingColumn = column
-                startingRow = row + 2
-            else:
-                startingColumn = column + 3
-                startingRow = 3
-            worksheet.write(startingRow, startingColumn, "Team", headingRight)
-            worksheet.write(startingRow, startingColumn + 1, "Scout", headingLeft)
-            notes = sorted(notes, key=itemgetter("team"))
-            for i in range(0, len(notes)):
-                worksheet.write(startingRow + i + 1, startingColumn, notes[i]["team"])
-                worksheet.write(startingRow + i + 1, startingColumn + 1, notes[i]["scout"])
+            #Add notes
+            if len(notes) > 0:
+                if (column / 3) == 2:
+                    startingColumn = column
+                    startingRow = row + 2
+                else:
+                    startingColumn = column + 3
+                    startingRow = 3
+                worksheet.write(startingRow, startingColumn, "Team", headingRight)
+                worksheet.write(startingRow, startingColumn + 1, "Scout", headingLeft)
+                notes = sorted(notes, key=itemgetter("team"))
+                for i in range(0, len(notes)):
+                    worksheet.write(startingRow + i + 1, startingColumn, notes[i]["team"])
+                    worksheet.write(startingRow + i + 1, startingColumn + 1, notes[i]["scout"])
 
     #Save workbook
     workbook.close()
