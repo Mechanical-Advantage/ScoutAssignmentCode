@@ -20,7 +20,6 @@ scoutRecordsDatabase = "testDatabase.db"
 outputFile = "schedule.xlsx"
 scheduleCSV = None
 port = 8000
-maxYear = 2019
 ourTeam = 6328
 
 #Initialize TBA connection
@@ -449,7 +448,7 @@ def getSchedule(event, eventFriendlyname):
     workbook.close()
 
     #Update event table
-    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventFriendlyname,time.strftime('%l:%M%p on %b %d, %Y'),eventId))
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventFriendlyname,time.strftime('%H:%M on %b %d, %Y'),eventId))
 
     #Close sqlite connection
     conn.commit()
@@ -717,8 +716,7 @@ class mainServer(object):
 
     @cherrypy.expose
     def create_changeYear(self, year=2017):
-        if 2017 <= int(year) <= maxYear:
-            cherrypy.session["selectedYear"] = year
+        cherrypy.session["selectedYear"] = year
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
