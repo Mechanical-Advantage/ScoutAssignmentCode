@@ -18,8 +18,10 @@ import string
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
 scoutRecordsDatabase = "testDatabase.db"
 outputFile = "schedule.xlsx"
+scheduleCSV = None
 port = 8000
 maxYear = 2019
+ourTeam = 6328
 
 #Initialize TBA connection
 tba = tbapy.TBA(TBAkey)
@@ -32,7 +34,8 @@ def initDatabase():
     cur.execute("""CREATE TABLE matchRecords (
         scout TEXT,
         team TEXT,
-        count INTEGAR
+        count INTEGAR,
+        event TEXT
         ); """)
     cur.execute("DROP TABLE IF EXISTS preferences")
     cur.execute("""CREATE TABLE preferences (
@@ -48,7 +51,9 @@ def initDatabase():
     cur.execute("""CREATE TABLE event (
         friendlyname TEXT,
         key TEXT,
-        timestamp TEXT
+        timestamp TEXT,
+        id TEXT,
+        recordsDeleted INTEGAR
         ); """)
     cur.execute("DROP TABLE IF EXISTS schedule")
     cur.execute("""CREATE TABLE schedule (
@@ -75,6 +80,40 @@ if not tempPath.is_file():
     initDatabase()
 
 def getSchedule(event, eventFriendlyname):
+    eventId = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=15))
+    
+    #Read from offline schedule if neccessary
+    if event == "offline":
+        if scheduleCSV == None:
+            return("Error - no offline schedule file specified")
+        #Check if file exists
+        tempPath = Path(scheduleCSV)
+        if not tempPath.is_file():
+            return("Error - offline schedule file not found")
+        
+        csv = open(scheduleCSV, "r")
+        csvSchedule = csv.read()
+        csvSchedule = csvSchedule.split("\n")
+        for i in range(0, len(csvSchedule)):
+            csvSchedule[i] = csvSchedule[i].split(",")
+
+        if len(csvSchedule[-1]) != 6:
+            csvSchedule = csvSchedule[:-1]
+
+        #Get name
+        eventFriendlyname = csvSchedule[0][0]
+        
+        #Get matches
+        matchlist = []
+        for i in range(1, len(csvSchedule)):
+            tempMatch = []
+            for f in range(0, 6):
+                tempMatch.append("frc" + csvSchedule[i][f])
+            matchlist.append(tempMatch)
+        matchlistDays = []
+        for i in range(0, len(matchlist)):
+            matchlistDays.append(1)
+
     #Connect to database
     conn = sql.connect(scoutRecordsDatabase)
     cur = conn.cursor()
@@ -101,8 +140,11 @@ def getSchedule(event, eventFriendlyname):
     createScoutRecords()
     for row in dbMatchRecords:
         if row[0] in scoutlist:
-            scoutRecords[scoutlist.index(row[0])][row[1]] = row[2]
-            scoutRecords_clean[scoutlist.index(row[0])][row[1]] = row[2]
+            if row[1] in scoutRecords[scoutlist.index(row[0])]:
+                scoutRecords[scoutlist.index(row[0])][row[1]] += row[2]
+            else:
+                scoutRecords[scoutlist.index(row[0])][row[1]] = row[2]
+            scoutRecords_clean[scoutlist.index(row[0])][row[1]] = 0
 
     #Finish creation of scout records array
     for i in range(0, len(scoutRecords)):
@@ -114,30 +156,35 @@ def getSchedule(event, eventFriendlyname):
         return("Error - needs 6 scouts")
 
     #Create match schedule
-    matchlistRaw = tba.event_matches(event)
-    if len(matchlistRaw) == 0:
-        return("Error - no schedule available")
+    try:
+        matchlistRaw = tba.event_matches(event)
+    except:
+        if len(matchlist) == 0:
+            return("Error - unable to connect to TBA")
+    else:
+        matchlistUnsorted = {}
+        matchlistDaysUnsorted = {}
+        for i in range(0, len(matchlistRaw)):
+            if matchlistRaw[i].comp_level == 'qm':
+                matchlistUnsorted[matchlistRaw[i].match_number] = [matchlistRaw[i].alliances["blue"]["team_keys"][0], matchlistRaw[i].alliances["blue"]["team_keys"][1], matchlistRaw[i].alliances["blue"]["team_keys"][2], matchlistRaw[i].alliances["red"]["team_keys"][0], matchlistRaw[i].alliances["red"]["team_keys"][1], matchlistRaw[i].alliances["red"]["team_keys"][2]]
+                matchlistDaysUnsorted[matchlistRaw[i].match_number] = matchlistRaw[i].time
 
-    matchlistUnsorted = {}
-    matchlistDaysUnsorted = {}
-    for i in range(0, len(matchlistRaw)):
-        if matchlistRaw[i].comp_level == 'qm':
-            matchlistUnsorted[matchlistRaw[i].match_number] = [matchlistRaw[i].alliances["blue"]["team_keys"][0], matchlistRaw[i].alliances["blue"]["team_keys"][1], matchlistRaw[i].alliances["blue"]["team_keys"][2], matchlistRaw[i].alliances["red"]["team_keys"][0], matchlistRaw[i].alliances["red"]["team_keys"][1], matchlistRaw[i].alliances["red"]["team_keys"][2]]
-            matchlistDaysUnsorted[matchlistRaw[i].match_number] = matchlistRaw[i].time
+        matchlist = []
+        for i in sorted(matchlistUnsorted.keys()):
+            matchlist.append(matchlistUnsorted[i])
 
-    matchlist = []
-    for i in sorted(matchlistUnsorted.keys()):
-        matchlist.append(matchlistUnsorted[i])
+        if len(matchlist) == 0:
+            return("Error - no schedule available")
 
-    matchlistDays = []
-    day = 0
-    lastDate = -1
-    for i in sorted(matchlistDaysUnsorted.keys()):
-        matchDay = int(datetime.utcfromtimestamp(matchlistDaysUnsorted[i]).strftime('%d'))
-        if matchDay > lastDate:
-            day += 1
-            lastDate = matchDay
-        matchlistDays.append(day)
+        matchlistDays = []
+        day = 0
+        lastDate = -1
+        for i in sorted(matchlistDaysUnsorted.keys()):
+            matchDay = int(datetime.utcfromtimestamp(matchlistDaysUnsorted[i]).strftime('%d'))
+            if matchDay > lastDate:
+                day += 1
+                lastDate = matchDay
+            matchlistDays.append(day)
 
     #Get team list
     teamlist = []
@@ -238,12 +285,10 @@ def getSchedule(event, eventFriendlyname):
         schedule.append(tempSchedule)
 
     #Write scout records to database
-    for i in range(0, len(scoutlist)):
-        cur.execute("DELETE FROM matchRecords WHERE scout=?", (scoutlist[i],))
     for scoutnumber in range(0, len(scoutRecords_clean)):
         for team, count in scoutRecords_clean[scoutnumber].items():
             if count > 0:
-                cur.execute("INSERT INTO matchRecords(scout,team,count) VALUES (?,?,?)", (scoutlist[scoutnumber],team,count,))
+                cur.execute("INSERT INTO matchRecords(scout,team,count,event) VALUES (?,?,?,?)", (scoutlist[scoutnumber],team,count,eventId))
 
     #Write schedule to database
     cur.execute("DELETE FROM schedule")
@@ -404,7 +449,7 @@ def getSchedule(event, eventFriendlyname):
     workbook.close()
 
     #Update event table
-    cur.execute("INSERT INTO event(key,friendlyname,timestamp) VALUES (?,?,?)", (event,eventFriendlyname,time.strftime('%l:%M%p on %b %d, %Y')))
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventFriendlyname,time.strftime('%l:%M%p on %b %d, %Y'),eventId))
 
     #Close sqlite connection
     conn.commit()
@@ -416,9 +461,9 @@ def event(cur): #Get event data from database
     dbEvent = cur.fetchall()
     output = []
     for i in range(0, len(dbEvent)):
-        output.append({"friendlyname": dbEvent[i][0], "key": dbEvent[i][1], "timestamp": dbEvent[i][2]})
+        output.append({"friendlyname": dbEvent[i][0], "key": dbEvent[i][1], "timestamp": dbEvent[i][2], "id": dbEvent[i][3], "recordsDeleted": dbEvent[i][4] == 1})
     if len(dbEvent) == 0:
-        output.append({"friendlyname": "NA", "key": "NA", "timestamp": "NA"})
+        output.append({"friendlyname": "NA", "key": "NA", "timestamp": "NA", "id": "NA", "recordsDeleted": False})
     output.reverse()
     return output
 
@@ -453,6 +498,7 @@ def scoutSchedule(cur): #Get schedule
 eventLookup = {}
 class mainServer(object):
     resetKey = ""
+    deleteRecordsLookup = []
     
     @cherrypy.expose
     def index(self):
@@ -460,8 +506,8 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>6328 Scout Scheduler</title></head><body>
-            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <html><head><title>$ourTeam Scout Scheduler</title></head><body>
+            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
             <a href="/editScouts">Edit scouts</a><br><br>
             <a href="/editPrefs">Edit scout preferences</a><br><br>
             <a href="/create">Create schedule</a><br><br>
@@ -470,6 +516,7 @@ class mainServer(object):
             </body></html>
             """
         output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
+        output = output.replace("$ourTeam", str(ourTeam))
         conn.close()
         return(output)
 
@@ -479,8 +526,8 @@ class mainServer(object):
         cur = conn.cursor()
     
         output = """
-            <html><head><title>Edit Scouts - 6328 Scout Scheduler</title></head><body>
-            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <html><head><title>Edit Scouts - $ourTeam Scout Scheduler</title></head><body>
+            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <b>Active Scouts:</b><br>
@@ -518,8 +565,9 @@ class mainServer(object):
         output = output.replace("$activeList_html", activeList_html)
         output = output.replace("$disabledList_html", disabledList_html)
         output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
-        self.resetKey = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        self.resetKey = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=5))
         output = output.replace("$resetKey", self.resetKey)
+        output = output.replace("$ourTeam", str(ourTeam))
         conn.close()
         return(output)
 
@@ -555,8 +603,8 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>Edit Scout Preferences - 6328 Scout Scheduler</title></head><body>
-            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <html><head><title>Edit Scout Preferences - $ourTeam Scout Scheduler</title></head><body>
+            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <b>Preferences:</b><br>
@@ -580,6 +628,7 @@ class mainServer(object):
         
         output = output.replace("$prefsList_html", prefsList_html)
         output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
+        output = output.replace("$ourTeam", str(ourTeam))
         conn.close()
         return(output)
 
@@ -607,8 +656,8 @@ class mainServer(object):
         cur = conn.cursor()
         
         output = """
-            <html><head><title>Create Schedule - 6328 Scout Scheduler</title></head><body>
-            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <html><head><title>Create Schedule - $ourTeam Scout Scheduler</title></head><body>
+            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <form method="post" action="/create_changeYear">
@@ -616,13 +665,17 @@ class mainServer(object):
             </form>
             
             <form method="post" action="/create_generateSchedule">
-            <b>Event: </b><select name="eventkey">$select_html</select><button type="submit">Create Schedule</button>
+            <b>Event: </b><select name="eventkey">$select_html<option value="offline">Use Offline Schedule</option></select><button type="submit">Create Schedule</button>
             </form>
             
             <b>Previous Events:</b><br>
             $events_html
             
-            <br>Schedules from all previous events will be used during generation.
+            <br>Schedules from all list events will be used during generation.
+            
+            <form method="post" action="/create_deleteRecords">
+            <b>Event #: </b><input type="text", name="eventNumber"><button type="submit">Delete Event Records</button>
+            </form>
             
             </body></html>
             """
@@ -631,22 +684,34 @@ class mainServer(object):
             year = cherrypy.session["selectedYear"]
         else:
             year = 2017
-        teamEventsRaw = tba.team_events('frc6328', year)
-        teamEventsSorted = sorted(teamEventsRaw, key=itemgetter('start_date'))
-        selectionHtml = ""
-        for i in range(0, len(teamEventsSorted)):
-            selectionHtml = selectionHtml + "<option value=\"" + teamEventsSorted[i].key + "\">" + teamEventsSorted[i].name + "</option>"
-            eventLookup[teamEventsSorted[i].key] = teamEventsSorted[i].name
+        
+        try:
+            teamEventsRaw = tba.team_events("frc" + str(ourTeam), year)
+        except:
+            selectionHtml = ""
+        else:
+            teamEventsSorted = sorted(teamEventsRaw, key=itemgetter('start_date'))
+            selectionHtml = ""
+            for i in range(0, len(teamEventsSorted)):
+                selectionHtml = selectionHtml + "<option value=\"" + teamEventsSorted[i].key + "\">" + teamEventsSorted[i].name + "</option>"
+                eventLookup[teamEventsSorted[i].key] = teamEventsSorted[i].name
     
         events = event(cur)
         eventsHtml = ""
+        self.deleteRecordsLookup = []
         for i in range(0, len(events)):
-            eventsHtml = eventsHtml + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + " )<br>"
+            self.deleteRecordsLookup.append(events[i]["id"])
+            eventsHtml = eventsHtml + str(i + 1) + ") " + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + " )"
+            if events[i]["recordsDeleted"]:
+                eventsHtml = eventsHtml + " - RECORDS DELETED<br>"
+            else:
+                eventsHtml = eventsHtml + "<br>"
     
         output = output.replace("$select_html", selectionHtml)
         output = output.replace("$events_html", eventsHtml)
         output = output.replace("$event_friendlyname", events[0]["friendlyname"])
         output = output.replace("$selection_year", str(year))
+        output = output.replace("$ourTeam", str(ourTeam))
         conn.close()
         return(output)
 
@@ -657,16 +722,33 @@ class mainServer(object):
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
-    def create_generateSchedule(self, eventkey="2017nhgrs"):
-        result = getSchedule(event=eventkey, eventFriendlyname=eventLookup[eventkey])
+    def create_generateSchedule(self, eventkey="offline"):
+        if eventkey == "offline":
+            eventFriendlyname = "NA"
+        else:
+            eventFriendlyname = eventLookup[eventkey]
+        result = getSchedule(event=eventkey, eventFriendlyname=eventFriendlyname)
         if result[:5] == "Error":
             output = """
-                <html><head><title>Error - 6328 Scout Scheduler</title></head><body>
+                <html><head><title>Error - $ourTeam Scout Scheduler</title></head><body>
                 <a href="/create">< Return</a><br><br>$error
                 </body></html>
                 """
             output = output.replace("$error", result)
+            output = output.replace("$ourTeam", str(ourTeam))
             return(output)
+        return("""<meta http-equiv="refresh" content="0; url=/create" />""")
+
+    @cherrypy.expose
+    def create_deleteRecords(self, eventNumber=2):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        if int(eventNumber) - 1 <= len(self.deleteRecordsLookup):
+            cur.execute("UPDATE event SET recordsDeleted=1 WHERE id=?", (self.deleteRecordsLookup[int(eventNumber) - 1],))
+            cur.execute("DELETE FROM matchRecords WHERE event=?", (self.deleteRecordsLookup[int(eventNumber) - 1],))
+    
+        conn.commit()
+        conn.close()
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
@@ -681,7 +763,7 @@ class mainServer(object):
         cur = conn.cursor()
 
         output = """
-            <html><head><title>View Schedule - 6328 Scout Scheduler</title>
+            <html><head><title>View Schedule - $ourTeam Scout Scheduler</title>
             <style>
             
             th, td {
@@ -707,15 +789,19 @@ class mainServer(object):
             </style>
             </head><body>
             
-            <h1>6328 Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
             <a href="/">< Return To Home</a><br><br>
             
             <form method="post" action="/view_change">
-            <input type="hidden", name="type", value="overview"><button type="submit">View Overview</button>
+            <input type="hidden", name="type", value="overview"><button type="submit">View Matches</button>
             </form>
             
             <form method="post" action="/view_change">
-            <input type="hidden", name="type", value="overview_scouts"><button type="submit">View Overview (w/ scouts)</button>
+            <input type="hidden", name="type", value="overview_scouts"><button type="submit">View Matches (w/ scouts)</button>
+            </form>
+            
+            <form method="post" action="/view_change">
+            <input type="hidden", name="type", value="teamlist"><button type="submit">View Teamlist</button>
             </form>
             
             <form method="post" action="/view_change">
@@ -746,7 +832,7 @@ class mainServer(object):
 
         table_html = ""
         if view_type == "overview": #Standard overview
-            title = "Schedule Overview"
+            title = "Match Schedule"
             table_html = """<tr>
                 <th>Match</th>
                 <th>B1</th>
@@ -768,7 +854,7 @@ class mainServer(object):
                 table_html = table_html + "</tr>"
 
         elif view_type == "overview_scouts": #Overview w/ scouts
-            title = "Schedule Overview (w/ scouts)"
+            title = "Match Schedlue (w/ scouts)"
             table_html = """<tr>
                 <th>Match</th>
                 <th>B1</th><th>Scout</th>
@@ -788,6 +874,47 @@ class mainServer(object):
                         color = "blue"
                     table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td>"
                 table_html = table_html + "</tr>"
+
+        elif view_type == "teamlist": #Team list
+            title = "Teamlist"
+            table_html = """<tr>
+                <th>Team</th>
+                <th>Primary Scout</th>
+                <th>Secondary Scout</th>
+                </tr>"""
+            schedule = scoutSchedule(cur)
+            teamlist = []
+            for matchnumber in range(0, len(schedule)):
+                for teamnumber in range(0, 6):
+                    if schedule[matchnumber][teamnumber]["team"] not in teamlist:
+                        teamlist.append(schedule[matchnumber][teamnumber]["team"])
+            teamlist = sorted(teamlist)
+            
+            #Get primary scouts
+            primaryScouts = {}
+            secondaryScouts = {}
+            scoutlist = scouts(cur)
+            for f in range(0, len(teamlist)):
+                scoutRecords = []
+                for scout, value in scoutlist.items():
+                    scoutRecords.append({"scout": scout, "count": 0})
+                for matchnumber in range(0, len(schedule)):
+                    for teamnumber in range(0, 6):
+                        if schedule[matchnumber][teamnumber]["team"] == teamlist[f]:
+                            for i in range(0, len(scoutRecords)):
+                                if scoutRecords[i]["scout"] == schedule[matchnumber][teamnumber]["scout"]:
+                                    scoutRecords[i]["count"] += 1
+                sortedScouts = sorted(scoutRecords, key=itemgetter("count"), reverse=True)
+                primaryScouts[teamlist[f]] = sortedScouts[0]["scout"]
+                if sortedScouts[1]["count"] > 0:
+                    secondaryScouts[teamlist[f]] = sortedScouts[0]["scout"]
+                else:
+                    secondaryScouts[teamlist[f]] = ""
+            
+            #Generate table
+            for i in range(0, len(teamlist)):
+                table_html = table_html + "<tr><td>" + str(teamlist[i]) + "</td><td>" + primaryScouts[teamlist[i]] + "</td><td>" + secondaryScouts[teamlist[i]] + "</td></td>"
+        
 
         elif view_type == "match": #Match schedule
             title = "Schedule for Match " + str(view_parameter)
@@ -810,7 +937,6 @@ class mainServer(object):
                 table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[view_parameter - 1][i]["team"]) + "</td><td>" + str(schedule[view_parameter - 1][i]["scout"]) + "</td>"
             table_html = table_html + "</tr>"
         
-
         elif view_type == "scout": #Schedule for scout
             title = "Schedule for scout '" + view_parameter + "'"
             table_html = """<tr>
@@ -823,8 +949,8 @@ class mainServer(object):
                     if schedule[matchnumber][i]["scout"] == view_parameter:
                         table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td>" + str(schedule[matchnumber][i]["team"]) + "</td></tr>"
 
-        else:
-            title = "Schedule for Team " + str(view_parameter) #Schedule for team
+        else: #Schedule for team
+            title = "Schedule for Team " + str(view_parameter)
             table_html = """<tr>
                 <th>Match</th>
                 <th>Team</th>
@@ -840,16 +966,16 @@ class mainServer(object):
                             color = "blue"
                         table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td></tr>"
 
-
         output = output.replace("$title", title)
         output = output.replace("$table_html", table_html)
         output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
+        output = output.replace("$ourTeam", str(ourTeam))
         conn.close()
         return(output)
 
     @cherrypy.expose
     def view_change(self, type="NA", parameter="NA"):
-        types = ["overview", "overview_scouts", "match", "scout", "team"]
+        types = ["overview", "overview_scouts", "teamlist", "match", "scout", "team"]
         intTypes = ["match", "team"]
         if type in types:
             cherrypy.session["scheduleView_type"] = type
