@@ -905,7 +905,7 @@ class mainServer(object):
                 sortedScouts = sorted(scoutRecords, key=itemgetter("count"), reverse=True)
                 primaryScouts[teamlist[f]] = sortedScouts[0]["scout"]
                 if sortedScouts[1]["count"] > 0:
-                    secondaryScouts[teamlist[f]] = sortedScouts[0]["scout"]
+                    secondaryScouts[teamlist[f]] = sortedScouts[1]["scout"]
                 else:
                     secondaryScouts[teamlist[f]] = ""
             
