@@ -307,7 +307,10 @@ def getSchedule(event, eventFriendlyname):
         cur.execute("INSERT INTO schedule(match,B1,B1_scout,B2,B2_scout,B3,B3_scout,R1,R1_scout,R2,R2_scout,R3,R3_scout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (matchnumber + 1,tempOutput["B1"],tempOutput["B1_scout"],tempOutput["B2"],tempOutput["B2_scout"],tempOutput["B3"],tempOutput["B3_scout"],tempOutput["R1"],tempOutput["R1_scout"],tempOutput["R2"],tempOutput["R2_scout"],tempOutput["R3"],tempOutput["R3_scout"]))
 
     #Write output (create workbook)
-    workbook = xlsxwriter.Workbook(outputFile)
+    try:
+        workbook = xlsxwriter.Workbook(outputFile)
+    except:
+        return("Error - excel file is open")
     eventTitle = workbook.add_format({'bold': True, 'font_size': 18})
     scoutTitle = workbook.add_format({'underline': True, 'font_size': 14})
     headingLeft = workbook.add_format({'bold': True, 'align': 'left'})
