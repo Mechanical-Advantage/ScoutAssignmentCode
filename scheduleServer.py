@@ -21,6 +21,7 @@ outputFile = "schedule.xlsx"
 scheduleCSV = "inputSchedule.csv"
 port = 8080
 ourTeam = 6328
+useDayTitles = False
 
 #Initialize TBA connection
 tba = tbapy.TBA(TBAkey)
@@ -416,7 +417,7 @@ def getSchedule(event, eventFriendlyname):
                 i += 1
                 column = int(math.floor(i / 43) * 3)
                 row = int((i - ((column / 3) * 43)) + 4)
-                if matchlistDays[matches[matchnumber]["match"] - 1] > lastDay: #Need to add day title, skip line
+                if (matchlistDays[matches[matchnumber]["match"] - 1] > lastDay) and useDayTitles: #Need to add day title, skip line
                     lastDay += 1
                     nextWrite = "day"
 
