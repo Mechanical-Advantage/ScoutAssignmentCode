@@ -79,7 +79,7 @@ tempPath = Path(scoutRecordsDatabase)
 if not tempPath.is_file():
     initDatabase()
 
-def getSchedule(event, eventFriendlyname):
+def getSchedule(event, eventFriendlyname, firstMatch):
     eventId = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=15))
 
     #Read from offline schedule if neccessary
@@ -193,6 +193,10 @@ def getSchedule(event, eventFriendlyname):
                 lastDate = matchDay
             matchlistDays.append(day)
 
+    #Remove matches before minimum
+    matchesRemoved = firstMatch - 1
+    matchlist = matchlist[matchesRemoved:]
+
     #Get team list
     teamlist = []
     for matchnumber in range(0, len(matchlist)):
@@ -305,7 +309,7 @@ def getSchedule(event, eventFriendlyname):
         for i in range(0, 6):
             tempOutput[codes[i]] = int(matchlist[matchnumber][i][3:])
             tempOutput[codes[i] + "_scout"] = scoutlist[schedule[matchnumber][int(matchlist[matchnumber][i][3:])]]
-        cur.execute("INSERT INTO schedule(match,B1,B1_scout,B2,B2_scout,B3,B3_scout,R1,R1_scout,R2,R2_scout,R3,R3_scout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (matchnumber + 1,tempOutput["B1"],tempOutput["B1_scout"],tempOutput["B2"],tempOutput["B2_scout"],tempOutput["B3"],tempOutput["B3_scout"],tempOutput["R1"],tempOutput["R1_scout"],tempOutput["R2"],tempOutput["R2_scout"],tempOutput["R3"],tempOutput["R3_scout"]))
+        cur.execute("INSERT INTO schedule(match,B1,B1_scout,B2,B2_scout,B3,B3_scout,R1,R1_scout,R2,R2_scout,R3,R3_scout) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (matchnumber + 1 + matchesRemoved,tempOutput["B1"],tempOutput["B1_scout"],tempOutput["B2"],tempOutput["B2_scout"],tempOutput["B3"],tempOutput["B3_scout"],tempOutput["R1"],tempOutput["R1_scout"],tempOutput["R2"],tempOutput["R2_scout"],tempOutput["R3"],tempOutput["R3_scout"]))
 
     #Write output (create workbook)
     workbook = xlsxwriter.Workbook(outputFile)
@@ -361,7 +365,7 @@ def getSchedule(event, eventFriendlyname):
             worksheet.write(0, column, alliance + str(i), headingRight)
             worksheet.write(0, column + 1, "Scout", headingLeft)
     for matchnumber in range(0, len(matchlist)):
-        worksheet.write(matchnumber + 1, 0, matchnumber + 1)
+        worksheet.write(matchnumber + 1, 0, matchnumber + 1 + matchesRemoved)
         for i in range(0, 6):
             worksheet.write(matchnumber + 1, (i * 2) + 1, int(matchlist[matchnumber][i][3:]), underlined)
             worksheet.write(matchnumber + 1, (i * 2) + 2, scoutlist[schedule[matchnumber][int(matchlist[matchnumber][i][3:])]])
@@ -383,7 +387,7 @@ def getSchedule(event, eventFriendlyname):
 
     for i in range(0, len(teamsOutput)):
         worksheet.write(i + 1, 0, teamsOutput[i]["team"])
-        worksheet.write(i + 1, 1, teamsOutput[i]["match"])
+        worksheet.write(i + 1, 1, teamsOutput[i]["match"] + matchesRemoved)
         worksheet.write(i + 1, 2, teamsOutput[i]["alliance"])
 
     #Write output (scout schedules)
@@ -427,7 +431,7 @@ def getSchedule(event, eventFriendlyname):
                         nextWrite = "match"
 
                 else: #Add match
-                    worksheet.write(row, column, matches[matchnumber]["match"])
+                    worksheet.write(row, column, matches[matchnumber]["match"] + matchesRemoved)
                     if primaryScouts[matches[matchnumber]["team"]] != scout:
                         if not any(d['team'] == matches[matchnumber]["team"] for d in notes): #Add to notes if not already
                             notes.append({"scout": primaryScouts[matches[matchnumber]["team"]], "team": matches[matchnumber]["team"]})
@@ -460,7 +464,11 @@ def getSchedule(event, eventFriendlyname):
         return("Error - schedule excel file is open")
 
     #Update event table
-    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventFriendlyname,time.strftime('%H:%M on %b %d, %Y'),eventId))
+    if firstMatch == 1:
+        eventSavename = eventFriendlyname
+    else:
+        eventSavename = eventFriendlyname + " (match " + str(firstMatch) + "+)"
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventSavename,time.strftime('%H:%M on %b %d, %Y'),eventId))
 
     #Close sqlite connection
     conn.commit()
@@ -487,7 +495,7 @@ def scouts(cur): #Get scoutlist
     return(scoutlist)
 
 def prefs(cur): #Get preferences
-    cur.execute("SELECT * FROM preferences")
+    cur.execute("SELECT * FROM preferences ORDER BY team")
     dbPrefs = cur.fetchall()
     output = {}
     for row in dbPrefs:
@@ -505,6 +513,10 @@ def scoutSchedule(cur): #Get schedule
         output.append(tempMatch)
     return output
 
+def getMatchesRemoved(cur): #Get matches removed
+    cur.execute("SELECT * FROM schedule ORDER BY match LIMIT 1")
+    return(cur.fetchall()[0][0] - 1)
+
 #Server object
 eventLookup = {}
 class mainServer(object):
@@ -518,7 +530,7 @@ class mainServer(object):
 
         output = """
             <html><head><title>$ourTeam Scout Scheduler</title></head><body>
-            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/editScouts">Edit scouts</a><br><br>
             <a href="/editPrefs">Edit scout preferences</a><br><br>
             <a href="/create">Create schedule</a><br><br>
@@ -538,7 +550,7 @@ class mainServer(object):
 
         output = """
             <html><head><title>Edit Scouts - $ourTeam Scout Scheduler</title></head><body>
-            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/">< Return To Home</a><br><br>
 
             <b>Active Scouts:</b><br>
@@ -615,7 +627,7 @@ class mainServer(object):
 
         output = """
             <html><head><title>Edit Scout Preferences - $ourTeam Scout Scheduler</title></head><body>
-            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/">< Return To Home</a><br><br>
 
             <b>Preferences:</b><br>
@@ -668,7 +680,7 @@ class mainServer(object):
 
         output = """
             <html><head><title>Create Schedule - $ourTeam Scout Scheduler</title></head><body>
-            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/">< Return To Home</a><br><br>
 
             <form method="post" action="/create_changeYear">
@@ -676,7 +688,9 @@ class mainServer(object):
             </form>
 
             <form method="post" action="/create_generateSchedule">
-            <b>Event: </b><select name="eventkey">$select_html<option value="offline">Use Offline Schedule</option></select><button type="submit">Create Schedule</button>
+            <b>Event: </b><select name="eventkey">$select_html<option value="offline">Use Offline Schedule</option></select><br>
+            <b>First match: </b><input name="firstMatch" type="number" min="1" value="1">
+            <button type="submit">Create Schedule</button>
             </form>
 
             <b>Previous Events:</b><br>
@@ -712,7 +726,7 @@ class mainServer(object):
         self.deleteRecordsLookup = []
         for i in range(0, len(events)):
             self.deleteRecordsLookup.append(events[i]["id"])
-            eventsHtml = eventsHtml + str(i + 1) + ") " + events[i]["friendlyname"] + " (" + events[i]["timestamp"] + " )"
+            eventsHtml = eventsHtml + str(i + 1) + ") " + events[i]["friendlyname"] + " ... " + events[i]["timestamp"]
             if events[i]["recordsDeleted"]:
                 eventsHtml = eventsHtml + " - RECORDS DELETED<br>"
             else:
@@ -732,12 +746,12 @@ class mainServer(object):
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
-    def create_generateSchedule(self, eventkey="offline"):
+    def create_generateSchedule(self, eventkey="offline", firstMatch=1):
         if eventkey == "offline":
             eventFriendlyname = "NA"
         else:
             eventFriendlyname = eventLookup[eventkey]
-        result = getSchedule(event=eventkey, eventFriendlyname=eventFriendlyname)
+        result = getSchedule(event=eventkey, eventFriendlyname=eventFriendlyname, firstMatch=int(firstMatch))
         if result[:5] == "Error":
             output = """
                 <html><head><title>Error - $ourTeam Scout Scheduler</title></head><body>
@@ -799,7 +813,7 @@ class mainServer(object):
             </style>
             </head><body>
 
-            <h1>$ourTeam Scout Scheduler ($event_friendlyname)</h1>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/">< Return To Home</a><br><br>
 
             <form method="post" action="/view_change">
@@ -853,8 +867,9 @@ class mainServer(object):
                 <th>R3</th>
                 </tr>"""
             schedule = scoutSchedule(cur)
+            matchesRemoved = getMatchesRemoved(cur)
             for matchnumber in range(0, len(schedule)):
-                table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td>"
+                table_html = table_html + "<tr><td>" + str(matchnumber + 1 + matchesRemoved) + "</td>"
                 for i in range(0, 6):
                     if i > 2:
                         color = "red"
@@ -875,8 +890,9 @@ class mainServer(object):
                 <th>R3</th><th>Scout</th>
                 </tr>"""
             schedule = scoutSchedule(cur)
+            matchesRemoved = getMatchesRemoved(cur)
             for matchnumber in range(0, len(schedule)):
-                table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td>"
+                table_html = table_html + "<tr><td>" + str(matchnumber + 1 + matchesRemoved) + "</td>"
                 for i in range(0, 6):
                     if i > 2:
                         color = "red"
@@ -939,12 +955,13 @@ class mainServer(object):
                 </tr>"""
             table_html = table_html + "<tr><td>" + str(view_parameter) + "</td>"
             schedule = scoutSchedule(cur)
+            matchesRemoved = getMatchesRemoved(cur)
             for i in range(0, 6):
                 if i > 2:
                     color = "red"
                 else:
                     color = "blue"
-                table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[view_parameter - 1][i]["team"]) + "</td><td>" + str(schedule[view_parameter - 1][i]["scout"]) + "</td>"
+                table_html = table_html + "<td class=\"" + color + "\">" + str(schedule[view_parameter - 1 - matchesRemoved][i]["team"]) + "</td><td>" + str(schedule[view_parameter - 1 - matchesRemoved][i]["scout"]) + "</td>"
             table_html = table_html + "</tr>"
 
         elif view_type == "scout": #Schedule for scout
@@ -954,10 +971,11 @@ class mainServer(object):
                 <th>Team</th>
                 </tr>"""
             schedule = scoutSchedule(cur)
+            matchesRemoved = getMatchesRemoved(cur)
             for matchnumber in range(0, len(schedule)):
                 for i in range(0, 6):
                     if schedule[matchnumber][i]["scout"] == view_parameter:
-                        table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td>" + str(schedule[matchnumber][i]["team"]) + "</td></tr>"
+                        table_html = table_html + "<tr><td>" + str(matchnumber + 1 + matchesRemoved) + "</td><td>" + str(schedule[matchnumber][i]["team"]) + "</td></tr>"
 
         else: #Schedule for team
             title = "Schedule for Team " + str(view_parameter)
@@ -967,6 +985,7 @@ class mainServer(object):
                 <th>Scout</th>
                 </tr>"""
             schedule = scoutSchedule(cur)
+            matchesRemoved = getMatchesRemoved(cur)
             for matchnumber in range(0, len(schedule)):
                 for i in range(0, 6):
                     if schedule[matchnumber][i]["team"] == view_parameter:
@@ -974,7 +993,7 @@ class mainServer(object):
                             color = "red"
                         else:
                             color = "blue"
-                        table_html = table_html + "<tr><td>" + str(matchnumber + 1) + "</td><td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td></tr>"
+                        table_html = table_html + "<tr><td>" + str(matchnumber + 1 + matchesRemoved) + "</td><td class=\"" + color + "\">" + str(schedule[matchnumber][i]["team"]) + "</td><td>" + str(schedule[matchnumber][i]["scout"]) + "</td></tr>"
 
         output = output.replace("$title", title)
         output = output.replace("$table_html", table_html)
