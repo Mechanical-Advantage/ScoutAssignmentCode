@@ -21,7 +21,7 @@ outputFile = "schedule.xlsx"
 scheduleCSV = "inputSchedule.csv"
 port = 8080
 host = "192.168.1.149"
-ourTeam = 6328
+ourTeam = 5687
 useDayTitles = False
 
 #Initialize TBA connection
