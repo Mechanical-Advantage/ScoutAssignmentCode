@@ -20,6 +20,7 @@ scoutRecordsDatabase = "scheduleDatabase.db"
 outputFile = "schedule.xlsx"
 scheduleCSV = "inputSchedule.csv"
 port = 8080
+host = "192.168.1.149"
 ourTeam = 6328
 useDayTitles = False
 
@@ -1014,5 +1015,5 @@ class mainServer(object):
                 cherrypy.session["scheduleView_parameter"] = parameter
         return("""<meta http-equiv="refresh" content="0; url=/view" />""")
 
-cherrypy.config.update({'server.socket_port': port})
+cherrypy.config.update({'server.socket_port': port, 'server.socket_host': host})
 cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}, "/favicon.ico": {"tools.staticfile.on": True, "tools.staticfile.filename": os.getcwd() + "/favicon.ico"}})
