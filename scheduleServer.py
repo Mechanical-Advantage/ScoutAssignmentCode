@@ -879,7 +879,7 @@ class mainServer(object):
                 table_html = table_html + "</tr>"
 
         elif view_type == "overview_scouts": #Overview w/ scouts
-            title = "Match Schedlue (w/ scouts)"
+            title = "Match Schedule (w/ scouts)"
             table_html = """<tr>
                 <th>Match</th>
                 <th>B1</th><th>Scout</th>
