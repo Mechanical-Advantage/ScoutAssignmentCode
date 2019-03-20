@@ -20,8 +20,8 @@ scoutRecordsDatabase = "scheduleDatabase.db"
 outputFile = "schedule.xlsx"
 scheduleCSV = "inputSchedule.csv"
 port = 8080
-host = "192.168.1.149"
-ourTeam = 5687
+host = "127.0.0.1"
+ourTeam = 6328
 useDayTitles = False
 
 #Initialize TBA connection
