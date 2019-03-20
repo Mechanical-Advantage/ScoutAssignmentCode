@@ -13,6 +13,7 @@ import cherrypy
 import time
 import random
 import string
+import urllib.parse
 
 #Config
 TBAkey = "yZEr4WuQd0HVlm077zUI5OWPfYsVfyMkLtldwcMYL6SkkQag29zhsrWsoOZcpbSj"
@@ -535,7 +536,8 @@ class mainServer(object):
             <a href="/editScouts">Edit scouts</a><br><br>
             <a href="/editPrefs">Edit scout preferences</a><br><br>
             <a href="/create">Create schedule</a><br><br>
-            <a href="/view">View schedule</a>
+            <a href="/view">View schedule</a><br><br>
+            <a href="/download">Download Schedule</a>
 
             </body></html>
             """
@@ -1014,6 +1016,62 @@ class mainServer(object):
             else:
                 cherrypy.session["scheduleView_parameter"] = parameter
         return("""<meta http-equiv="refresh" content="0; url=/view" />""")
+
+    @cherrypy.expose
+    def download(self, response=""):
+        conn = sql.connect(scoutRecordsDatabase)
+        cur = conn.cursor()
+        
+        output = """
+            <html><head><title>Download Schedule - $ourTeam Scout Scheduler</title></head><body>
+            <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
+            <a href="/">< Return To Home</a><br><br>
+            
+            <form method="post" action="/download_internal">
+            <b>Event code: </b><input type="text", name="event", value="2017nhgrs"><button type="submit">Download Schedule</button>
+            </form>
+            
+            <i>$response</i>
+            
+            </body></html>
+            """
+        
+        output = output.replace("$response", response)
+        output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
+        output = output.replace("$ourTeam", str(ourTeam))
+        conn.close()
+        return(output)
+
+    @cherrypy.expose
+    def download_internal(self, event="2017nhgrs"):
+        def downloadSchedule(event):
+            #Create match schedule
+            try:
+                matchlistRaw = tba.event_matches(event)
+            except:
+                return("Error - unable to connect to TBA")
+            else:
+                matchlistUnsorted = {}
+                matchlistDaysUnsorted = {}
+                for i in range(0, len(matchlistRaw)):
+                    if matchlistRaw[i].comp_level == 'qm':
+                        matchlistUnsorted[matchlistRaw[i].match_number] = [matchlistRaw[i].alliances["blue"]["team_keys"][0], matchlistRaw[i].alliances["blue"]["team_keys"][1], matchlistRaw[i].alliances["blue"]["team_keys"][2], matchlistRaw[i].alliances["red"]["team_keys"][0], matchlistRaw[i].alliances["red"]["team_keys"][1], matchlistRaw[i].alliances["red"]["team_keys"][2]]
+                        matchlistDaysUnsorted[matchlistRaw[i].match_number] = matchlistRaw[i].time
+
+                matchlist = []
+                for i in sorted(matchlistUnsorted.keys()):
+                    matchlist.append(matchlistUnsorted[i])
+                
+                if len(matchlist) == 0:
+                    return("Error - no schedule available")
+
+                print(matchlist)
+        
+        response = downloadSchedule(event)
+        print(response)
+        output = """<meta http-equiv="refresh" content="0; url=/download?response=$response" />"""
+        output = output.replace("$response", urllib.parse.quote(response))
+        return(output)
 
 cherrypy.config.update({'server.socket_port': port, 'server.socket_host': host})
 cherrypy.quickstart(mainServer(), "/", {"/": {"log.access_file": "", "log.error_file": "", "tools.sessions.on": True}, "/favicon.ico": {"tools.staticfile.on": True, "tools.staticfile.filename": os.getcwd() + "/favicon.ico"}})
