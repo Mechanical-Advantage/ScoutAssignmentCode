@@ -537,7 +537,7 @@ class mainServer(object):
             <a href="/editPrefs">Edit scout preferences</a><br><br>
             <a href="/create">Create schedule</a><br><br>
             <a href="/view">View schedule</a><br><br>
-            <a href="/download">Download Schedule</a>
+            <a href="/download">Download schedule</a>
 
             </body></html>
             """
@@ -1065,12 +1065,38 @@ class mainServer(object):
                 if len(matchlist) == 0:
                     return("Error - no schedule available")
 
-                print(matchlist)
+                #Create workbook
+                workbook = xlsxwriter.Workbook(outputFile)
+
+                #Write output (match schedule (long))
+                worksheet = workbook.add_worksheet("Matches_long")
+                teamsOutput = []
+                for matchnumber in range(0, len(matchlist)):
+                    for i in range(0, len(matchlist[matchnumber])):
+                        if i < 3:
+                            alliance = 1
+                        else:
+                            alliance = 0
+                        teamsOutput.append({"match": matchnumber + 1, "team": int(matchlist[matchnumber][i][3:]), "alliance": alliance})
+                teamsOutput = sorted(teamsOutput, key=lambda x: (x['team'], x['match']))
+
+                for i in range(0, len(teamsOutput)):
+                    worksheet.write(i, 0, teamsOutput[i]["team"])
+                    worksheet.write(i, 1, teamsOutput[i]["match"])
+                    worksheet.write(i, 2, teamsOutput[i]["alliance"])                
+                
+                #Save workbook
+                try:
+                    workbook.close()
+                except:
+                    return("Error - schedule excel file is open")
+                return("Successfully downloaded schedule for " + event)
         
         response = downloadSchedule(event)
         print(response)
         output = """<meta http-equiv="refresh" content="0; url=/download?response=$response" />"""
-        output = output.replace("$response", urllib.parse.quote(response))
+        #output = output.replace("$response", urllib.parse.quote(response))
+        output = output.replace("$response", response)
         return(output)
 
 cherrypy.config.update({'server.socket_port': port, 'server.socket_host': host})
