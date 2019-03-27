@@ -21,7 +21,7 @@ scoutRecordsDatabase = "scheduleDatabase.db"
 outputFile = "schedule.xlsx"
 scheduleCSV = "inputSchedule.csv"
 port = 8080
-host = "127.0.0.1"
+host = "192.168.1.246"
 ourTeam = 6328
 useDayTitles = False
 
