@@ -374,9 +374,6 @@ def getSchedule(event, eventFriendlyname, firstMatch):
 
     #Write output (match schedule (long))
     worksheet = workbook.add_worksheet("Matches_long")
-    worksheet.write(0, 0, "Team", headingRight)
-    worksheet.write(0, 1, "Match", headingRight)
-    worksheet.write(0, 2, "Alliance", headingRight)
     teamsOutput = []
     for matchnumber in range(0, len(matchlist)):
         for i in range(0, len(matchlist[matchnumber])):
@@ -384,13 +381,13 @@ def getSchedule(event, eventFriendlyname, firstMatch):
                 alliance = 1
             else:
                 alliance = 0
-            teamsOutput.append({"match": matchnumber + 1, "team": int(matchlist[matchnumber][i][3:]), "alliance": alliance})
-    teamsOutput = sorted(teamsOutput, key=lambda x: (x['team'], x['match']))
+            teamsOutput.append({"match": matchnumber + 1, "team": int(matchlist[matchnumber][i][3:]), "alliance": alliance, "scout": primaryScouts[int(matchlist[matchnumber][i][3:])]})
+    teamsOutput = sorted(teamsOutput, key=lambda x: (x['scout'], x['team'], x['match']))
 
     for i in range(0, len(teamsOutput)):
-        worksheet.write(i + 1, 0, teamsOutput[i]["team"])
-        worksheet.write(i + 1, 1, teamsOutput[i]["match"] + matchesRemoved)
-        worksheet.write(i + 1, 2, teamsOutput[i]["alliance"])
+        worksheet.write(i, 0, teamsOutput[i]["team"])
+        worksheet.write(i, 1, teamsOutput[i]["match"] + matchesRemoved)
+        worksheet.write(i, 2, teamsOutput[i]["alliance"])
 
     #Write output (scout schedules)
     #Create long formatted (sort schedule)
