@@ -81,7 +81,7 @@ tempPath = Path(scoutRecordsDatabase)
 if not tempPath.is_file():
     initDatabase()
 
-def getSchedule(event, eventFriendlyname, firstMatch):
+def getSchedule(event, eventFriendlyname, firstMatch, lastMatch, totalPriority):
     eventId = ''.join(random.choices(string.ascii_lowercase + string.ascii_uppercase + string.digits, k=15))
 
     #Read from offline schedule if neccessary
@@ -159,6 +159,7 @@ def getSchedule(event, eventFriendlyname, firstMatch):
     for i in range(0, len(scoutRecords)):
         scoutRecords[i]['total'] = 0
         scoutRecords[i]['id'] = i
+        scoutRecords_clean[i]['id'] = i
 
     #Check for 6 scouts
     if len(scoutlist) < 6:
@@ -195,8 +196,11 @@ def getSchedule(event, eventFriendlyname, firstMatch):
                 lastDate = matchDay
             matchlistDays.append(day)
 
-    #Remove matches before minimum
+    #Remove matches not within range
     fullMatchlist = matchlist
+    if lastMatch < len(matchlist):
+        matchesRemoved = len(matchlist) - lastMatch
+        matchlist = matchlist[:-matchesRemoved]
     matchesRemoved = firstMatch - 1
     matchlist = matchlist[matchesRemoved:]
 
@@ -224,7 +228,11 @@ def getSchedule(event, eventFriendlyname, firstMatch):
 
     #Create priority lists
     def priorityList(team):
-        sortedScouts = sorted(scoutRecords, key=lambda x: (-x[team], x['total']))
+        #sortedScouts = sorted(scoutRecords, key=lambda x: (-x[team], x['total']))
+        sortedScouts = []
+        for i in range(0, len(scoutRecords)):
+            sortedScouts.append({"id": scoutRecords[i]['id'], "priority": float(scoutRecords[i][team]) - float(scoutRecords[i]['total'])*(totalPriority/10), "total": scoutRecords[i]['total']})
+        sortedScouts = sorted(sortedScouts, key=lambda x: (-x['priority'], x['total']))
         tempOutput = []
         for i in range(0, len(sortedScouts)):
             tempOutput.append(sortedScouts[i]['id'])
@@ -267,7 +275,11 @@ def getSchedule(event, eventFriendlyname, firstMatch):
                     #Resolved by comparing potential 'loss of experience' if each team used secondary scout
                     comparisonData = []
                     for i in range(0, len(scoutRequests[scoutRequestNumber])):
-                        comparisonData.append(scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][0]][scoutRequests[scoutRequestNumber][i]] - scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][1]][scoutRequests[scoutRequestNumber][i]]) #Find difference between experience of primary and secondary scout
+                        firstValue = scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][0]][scoutRequests[scoutRequestNumber][i]]
+                        firstValue -= float(scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][0]]['total'])*(totalPriority/10)
+                        secondValue = scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][1]][scoutRequests[scoutRequestNumber][i]]
+                        secondValue -= float(scoutRecords[priorityLists[scoutRequests[scoutRequestNumber][i]][1]]['total'])*(totalPriority/10)
+                        comparisonData.append(firstValue - secondValue) #Find difference between experience of primary and secondary scout
 
                     maxid = 0
                     for i in range(0, len(comparisonData)):
@@ -333,7 +345,7 @@ def getSchedule(event, eventFriendlyname, firstMatch):
     primaryScouts = {}
     secondaryScouts = {}
     for teamnumber in range(0, len(teamlist)):
-        sortedScouts = sorted(scoutRecords, key=itemgetter(teamlist[teamnumber]), reverse=True)
+        sortedScouts = sorted(scoutRecords_clean, key=itemgetter(teamlist[teamnumber]), reverse=True)
         primaryScouts[int(teamlist[teamnumber][3:])] = scoutlist[sortedScouts[0]['id']]
         if sortedScouts[1][teamlist[teamnumber]] == 0:
             secondaryScouts[int(teamlist[teamnumber][3:])] = ""
@@ -406,7 +418,7 @@ def getSchedule(event, eventFriendlyname, firstMatch):
         if len(matches) > 0: #Check if scout has matches
             #Set up worksheet
             worksheet = workbook.add_worksheet("Schedule (" + scout + ")")
-            worksheet.write(0, 0, "Scouting Schedule (" + eventFriendlyname + ")", eventTitle)
+            worksheet.write(0, 0, "Scouting Schedule: " + eventFriendlyname, eventTitle)
             worksheet.write(1, 0, scout, scoutTitle)
             worksheet.write(3, 0, "Match", headingRight)
             worksheet.write(3, 1, "Team", headingRight)
@@ -464,11 +476,7 @@ def getSchedule(event, eventFriendlyname, firstMatch):
         return("Error - schedule excel file is open")
 
     #Update event table
-    if firstMatch == 1:
-        eventSavename = eventFriendlyname
-    else:
-        eventSavename = eventFriendlyname + " (match " + str(firstMatch) + "+)"
-    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventSavename,time.strftime('%H:%M on %b %d, %Y'),eventId))
+    cur.execute("INSERT INTO event(key,friendlyname,timestamp,id,recordsDeleted) VALUES (?,?,?,?,0)", (event,eventFriendlyname,time.strftime('%H:%M on %b %d, %Y'),eventId))
 
     #Close sqlite connection
     conn.commit()
@@ -690,14 +698,17 @@ class mainServer(object):
 
             <form method="post" action="/create_generateSchedule">
             <b>Event: </b><select name="eventkey">$select_html<option value="offline">Use Offline Schedule</option></select><br>
-            <b>First match: </b><input name="firstMatch" type="number" min="1" value="1">
+            <b>Day: </b><input name="day" type="number" min="0" value="0"> (0 for single day event)<br>
+            <b>First match: </b><input name="firstMatch" type="number" min="1" value="1"><br>
+            <b>Last match: </b><input name="lastMatch" type="number" min="2" value="99"><br>
+            Prioritize max experience<input name="totalPriority" type="range" min="0" max="75" value="75" style="width: 200px; margin-left: 10px; margin-right: 10px;">Prioritize equal matches (recommended)<br>
             <button type="submit">Create Schedule</button>
             </form>
 
             <b>Previous Events:</b><br>
             $events_html
 
-            <br>Schedules from all list events will be used during generation.
+            <br>Schedules from all listed events will be used during generation.
 
             <form method="post" action="/create_deleteRecords">
             <b>Event #: </b><input type="text", name="eventNumber"><button type="submit">Delete Event Records</button>
@@ -747,12 +758,14 @@ class mainServer(object):
         return("""<meta http-equiv="refresh" content="0; url=/create" />""")
 
     @cherrypy.expose
-    def create_generateSchedule(self, eventkey="offline", firstMatch=1):
+    def create_generateSchedule(self, eventkey="offline", firstMatch=1, lastMatch=99, totalPriority=0, day=0):
         if eventkey == "offline":
             eventFriendlyname = "NA"
         else:
             eventFriendlyname = eventLookup[eventkey]
-        result = getSchedule(event=eventkey, eventFriendlyname=eventFriendlyname, firstMatch=int(firstMatch))
+        if day != 0:
+            eventFriendlyname = eventFriendlyname + " (Day " + str(day) + ")"
+        result = getSchedule(event=eventkey, eventFriendlyname=eventFriendlyname, firstMatch=int(firstMatch), lastMatch=int(lastMatch), totalPriority=float(totalPriority))
         if result[:5] == "Error":
             output = """
                 <html><head><title>Error - $ourTeam Scout Scheduler</title></head><body>
