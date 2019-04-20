@@ -1032,21 +1032,21 @@ class mainServer(object):
     def download(self, response=""):
         conn = sql.connect(scoutRecordsDatabase)
         cur = conn.cursor()
-        
+
         output = """
             <html><head><title>Download Schedule - $ourTeam Scout Scheduler</title></head><body>
             <h1>$ourTeam Scout Scheduler: $event_friendlyname</h1>
             <a href="/">< Return To Home</a><br><br>
-            
+
             <form method="post" action="/download_internal">
             <b>Event code: </b><input type="text", name="event", value="2017nhgrs"><button type="submit">Download Schedule</button>
             </form>
-            
+
             <i>$response</i>
-            
+
             </body></html>
             """
-        
+
         output = output.replace("$response", response)
         output = output.replace("$event_friendlyname", event(cur)[0]["friendlyname"])
         output = output.replace("$ourTeam", str(ourTeam))
@@ -1072,7 +1072,7 @@ class mainServer(object):
                 matchlist = []
                 for i in sorted(matchlistUnsorted.keys()):
                     matchlist.append(matchlistUnsorted[i])
-                
+
                 if len(matchlist) == 0:
                     return("Error - no schedule available")
 
@@ -1094,15 +1094,15 @@ class mainServer(object):
                 for i in range(0, len(teamsOutput)):
                     worksheet.write(i, 0, teamsOutput[i]["team"])
                     worksheet.write(i, 1, teamsOutput[i]["match"])
-                    worksheet.write(i, 2, teamsOutput[i]["alliance"])                
-                
+                    worksheet.write(i, 2, teamsOutput[i]["alliance"])
+
                 #Save workbook
                 try:
                     workbook.close()
                 except:
                     return("Error - schedule excel file is open")
                 return("Successfully downloaded schedule for " + event)
-        
+
         response = downloadSchedule(event)
         print(response)
         output = """<meta http-equiv="refresh" content="0; url=/download?response=$response" />"""
